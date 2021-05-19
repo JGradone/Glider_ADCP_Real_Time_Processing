@@ -9,13 +9,14 @@ import datetime
 import struct
 import pandas as pd
 import math
+from scipy.spatial.transform import Rotation as R
 #
 
 rtime=datetime.datetime(2020,1,1,0,0,0)
 
 odir='./'
-#idir = 'C:\\work\\glideradcp\\data\\ru33_2020_11_20_dvl\\pd0\\'
-idir = '/Users/joegradone/SynologyDrive/Drive/Rutgers/Research/data/Glider/RU_33/625/processed/PD0/'
+idir = 'C:\\work\\glideradcp\\data\\ru33_2020_11_20_dvl\\pd0\\'
+#idir = '/Users/joegradone/SynologyDrive/Drive/Rutgers/Research/data/Glider/RU_33/625/processed/PD0/'
 time=[]    
 depth=[] 
 pitch=[]
@@ -52,7 +53,7 @@ def main(argv):
     qaqc_data()
     process_data(U=u1,V=u2,H=35,dz=4)
  #   write_data(file)
-    plot_data()
+#    plot_data()
     
 
 
@@ -287,13 +288,22 @@ def read_PD0(infile):
               tPG=struct.unpack(fmt,tdat[Is:Is+ncells*4])
               tPG=np.array(tPG)
               
+              
+              
+              
+              
+              
             
               uvw.shape=(ncells,4)
               tEI.shape=(ncells,4)
               tC.shape=(ncells,4)
               tPG.shape=(ncells,4)#ADDED 02/11/2020
              
-              
+              bins=(np.arange(0,ncells,1,np.double)*cellsize)+bin1  
+          
+              uvw=mapdepthcells(uvw,tpitch,troll)
+            
+             
               time[ind]=ttime.days+ttime.seconds/86400.0
                   
               depth[ind]=tdepth
@@ -302,7 +312,7 @@ def read_PD0(infile):
               temp[ind]=ttemp
               heading[ind]=theading
               
-              P=np.arctan(np.tan(tpitch*np.pi/180.0)*np.cos(troll*np.pi/180.0))
+  #            P=np.arctan(np.tan(tpitch*np.pi/180.0)*np.cos(troll*np.pi/180.0))
               shead=theading+hdalign
               CH=np.cos(shead*np.pi/180.0)
               SH=np.sin(shead*np.pi/180.0)
@@ -389,7 +399,7 @@ def read_PD0(infile):
             
             continue
     
-    bins=(np.arange(0,ncells,1,np.double)*cellsize)+bin1   
+    
     u1=u1[:,0:ncells]
     u2=u2[:,0:ncells]
     u3=u3[:,0:ncells]
@@ -407,6 +417,115 @@ def read_PD0(infile):
     pg3=pg3[:,0:ncells]
     pg4=pg4[:,0:ncells]
 
+
+def mapdepthcells(uvw,tpitch,troll):
+    global bins
+ #   print('Mapping depth cells')
+    brange=bins/np.cos(30*np.pi/180.0)
+    tuvw=uvw*np.nan
+    az=90*np.pi/180
+    elev=-60*np.pi/180
+    XYZ1 = sph2cart(az,elev,brange)
+    
+   
+    az=-90*np.pi/180
+    elev=-60*np.pi/180
+    XYZ2 = sph2cart(az,elev,brange)
+    
+    az=0*np.pi/180
+    elev=-60*np.pi/180
+    XYZ3 = sph2cart(az,elev,brange) 
+    
+    az=180*np.pi/180
+    elev=-60*np.pi/180
+    XYZ4= sph2cart(az,elev,brange)
+#    trot=np.array([[0.9330  , -0.0670 ,  -0.3536],[-0.0670  , 0.9330 ,  -0.3536],[0.3536 ,   0.3536 ,   0.8660]])
+
+
+#    print([tpitch,troll])
+    rang1=tpitch*np.pi/(180) 
+    rang2=troll*np.pi/(180) 
+    sc=1/np.sqrt(2.0)
+    ax1=sc*rang1*np.array([-1, 1, 0])
+    ax2=sc*rang2*np.array([1, 1, 0])
+    rmx1 = R.from_rotvec(ax1)
+    rmx2 = R.from_rotvec(ax2)
+    
+    rot1=rmx1.as_matrix()    
+    rot2=rmx2.as_matrix()  
+    rXYZ1=np.concatenate(([XYZ1[0]],[XYZ1[1]],[XYZ1[2]]),axis=0)
+    r1=rXYZ1.transpose() @ rot1 @ rot2
+    rXYZ2=np.concatenate(([XYZ2[0]],[XYZ2[1]],[XYZ2[2]]),axis=0)
+    r2=rXYZ2.transpose() @ rot1  @ rot2
+    rXYZ3=np.concatenate(([XYZ3[0]],[XYZ3[1]],[XYZ3[2]]),axis=0)
+    r3=rXYZ3.transpose() @ rot1 @ rot2
+    rXYZ4=np.concatenate(([XYZ4[0]],[XYZ4[1]],[XYZ4[2]]),axis=0)
+    r4=rXYZ4.transpose() @ rot1 @ rot2
+    
+    # gX=np.arange(-10,10)
+    # gY=gX*0.0
+    # g=(gX+1j*gY)*np.exp(1j*45.0*np.pi/180)
+    # gX=np.real(g)
+    # gY=np.imag(g)
+    # gZ=0.0*gX
+    
+    
+    # gDX=bins*0.0
+    # gDY=bins*0.0
+    # gDZ=-bins
+    # tmp=np.concatenate(([gX],[gY],[gZ]),axis=0)
+    # rg=tmp.transpose() @ rot1 @ rot2
+    
+    # tmp=np.concatenate(([gDX],[gDY],[gDZ]),axis=0)
+    # rDg=tmp.transpose() @ rot1 @ rot2
+    
+    # plt.figure(1)
+    # plt.clf()
+    # ax = plt.axes(projection='3d')
+    # ax.plot3D(XYZ1[0],XYZ1[1],XYZ1[2],'r')
+    # ax.plot3D(r1[:,0],r1[:,1],r1[:,2],'b')
+
+    # ax.plot3D(XYZ2[0],XYZ2[1],XYZ2[2],'r')
+    # ax.plot3D(r2[:,0],r2[:,1],r2[:,2],'b')
+    # ax.plot3D(XYZ3[0],XYZ3[1],XYZ3[2],'r')
+    # ax.plot3D(r3[:,0],r3[:,1],r3[:,2],'b')
+    # ax.plot3D(XYZ4[0],XYZ4[1],XYZ4[2],'r')
+    # ax.plot3D(r4[:,0],r4[:,1],r4[:,2],'b')
+    # ax.plot3D(gX,gY,gZ,'k')
+    # ax.plot3D(rg[:,0],rg[:,1],rg[:,2],'b')
+    
+
+    # ax.plot3D(gDX,gDY,gDZ,'r')
+    # ax.plot3D(rDg[:,0],rDg[:,1],rDg[:,2],'b')
+    # plt.grid(True)
+    
+    tuvw[:,0]=np.interp(-r1[:,2],bins,uvw[:,0])
+    tuvw[:,1]=np.interp(-r2[:,2],bins,uvw[:,1])
+    tuvw[:,2]=np.interp(-r3[:,2],bins,uvw[:,2])
+    tuvw[:,3]=np.interp(-r4[:,2],bins,uvw[:,3])
+    # plt.figure(3)
+    # plt.clf()
+    # plt.subplot(141)
+    # plt.plot(uvw[:,0],-bins,'r',marker='o')
+    # plt.plot(tuvw[:,0],-bins,'r',marker='+')
+    # plt.grid(True)
+    # plt.subplot(142)
+    # plt.plot(uvw[:,1],-bins,'b',marker='o')
+    # plt.plot(tuvw[:,1],-bins,'b',marker='+')
+    # plt.grid(True)
+    # plt.subplot(143)
+    # plt.plot(uvw[:,2],-bins,'k',marker='o')
+    # plt.plot(tuvw[:,2],-bins,'k',marker='+')
+    # plt.grid(True)
+    # plt.subplot(144)
+    # plt.plot(uvw[:,3],-bins,'g',marker='o')
+    # plt.plot(tuvw[:,3],-bins,'g',marker='+')
+    # plt.grid(True)
+    # plt.show()
+    
+    # print("Paused")
+    # input()
+    return tuvw
 
 def qaqc_data():
     print('PROCESSING DVL DATA')
@@ -706,10 +825,17 @@ def write_data(infile):
     
 #    
     ncfile.close()
-        
+def sph2cart(az,elev,r):
+    z = r * np.sin(elev)
+    rcoselev = r * np.cos(elev)
+    x = rcoselev * np.cos(az)
+    y = rcoselev * np.sin(az)
+    return x,y,z;
+
+
 def plot_data():
     print('Plotting DVL DATA')       
-
+    print(bins)
     plt.figure(1)
     plt.clf()
     plt.plot(time,-depth,'r')
@@ -785,9 +911,6 @@ def plot_data():
     pc2=plt.pcolormesh(time,-bins,u4.transpose(),cmap=cmap,vmin=-1,vmax=1)
     #plt.plot(time,-depth,'k')
     fig3.colorbar(pc2,ax=ax1)
-    plt.show()
-    
-    
     plt.show()
     
     ## A few test plots
