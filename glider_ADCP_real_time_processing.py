@@ -15,8 +15,8 @@ from scipy.spatial.transform import Rotation as R
 rtime=datetime.datetime(2020,1,1,0,0,0)
 
 odir='./'
-idir = 'C:\\work\\glideradcp\\data\\ru33_2020_11_20_dvl\\pd0\\'
-#idir = '/Users/joegradone/SynologyDrive/Drive/Rutgers/Research/data/Glider/RU_33/625/processed/PD0/'
+#idir = 'C:\\work\\glideradcp\\data\\ru33_2020_11_20_dvl\\pd0\\'
+idir = '/Users/joegradone/SynologyDrive/Drive/Rutgers/Research/data/Glider/RU_33/625/processed/PD0/'
 time=[]    
 depth=[] 
 pitch=[]
@@ -53,7 +53,7 @@ def main(argv):
     qaqc_data()
     process_data(U=u1,V=u2,H=35,dz=4)
  #   write_data(file)
-#    plot_data()
+    plot_data()
     
 
 
@@ -571,18 +571,16 @@ def qaqc_data():
     # u4[pg_low] == float("NAN")
     
     # # Not really sure what pitch/roll filters to use
-    # high_pitch =  abs(pitch) > 30
-    # low_pitch  = abs(pitch) < 20
-    # pitch_ind  = low_pitch + high_pitch
+    high_pitch =  abs(pitch) > 30
+    low_pitch  = abs(pitch) < 20
+    pitch_ind  = low_pitch + high_pitch
     
-    # u1[pitch_ind] = float("NAN")
-    # u2[pitch_ind] = float("NAN")
-    # u3[pitch_ind] = float("NAN")
-    # u4[pitch_ind] = float("NAN")
+    u1[pitch_ind] = float("NAN")
+    u2[pitch_ind] = float("NAN")
+    u3[pitch_ind] = float("NAN")
+    u4[pitch_ind] = float("NAN")
 
-                         
-
-    
+                        
 def process_data(U,V,H,dz):
     global O_ls, G_ls, bin_new    
     ## Written by jgradone@marine.rutgers.edu Feb-2021
@@ -620,8 +618,8 @@ def process_data(U,V,H,dz):
     # Set knowns from Equations 19 from Visbeck (2002) page 800
     # Maximum number of observations (nd) is given by the number of velocity
     # estimates per ping (nbin) times the number of profiles per cast (nt)
-    nbin = u1.shape[0]  # number of programmed ADCP bins per individual profile
-    nt   = u1.shape[1]  # number of individual velocity profiles
+    nbin = U.shape[0]  # number of programmed ADCP bins per individual profile
+    nt   = U.shape[1]  # number of individual velocity profiles
     nd   = nbin*nt      # G dimension (1) 
     
     # Define the edges of the bins
@@ -926,6 +924,11 @@ def plot_data():
     plt.plot(time,-depth,'k')
     plt.title('20 < abs(Pitch) < 30')    
     fig3.colorbar(pc3)
+    
+    dp = np.diff(pitch)
+    plt.figure(8)
+    plt.plot(dp[1:200])
+    plt.axhline(y=-5)
     
 #def bin(s):
 #    return str(s) if s<=1 else bin(s>>1) + str(s&1)
