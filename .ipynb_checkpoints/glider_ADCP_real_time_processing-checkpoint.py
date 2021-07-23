@@ -51,7 +51,7 @@ def main(argv):
     file=files[-3]# -1 gets the last file. 
     read_PD0(file)
     qaqc_data()
-    process_data(U=u1,V=u2,H=35,dz=1,u_daverage=0,v_daverage=0)
+    process_data(U=u1,V=u2,H=35,dz=4)
  #   write_data(file)
     plot_data()
     
@@ -582,10 +582,9 @@ def qaqc_data():
     u4[pitch_ind] = float("NAN")
 
                         
-def process_data(U,V,H,dz,u_daverage,v_daverage):
+def process_data(U,V,H,dz):
     global O_ls, G_ls, bin_new    
-    ## Feb-2021 jgradone@marine.rutgers.edu Initial
-    ## Jul-2021 jgradone@marine.rutgers.edu Updates for constraints
+    ## Written by jgradone@marine.rutgers.edu Feb-2021
     
     ## Purpose: Take velocity measurements from glider mounted ADCP and compute
     # shear profiles
@@ -603,137 +602,146 @@ def process_data(U,V,H,dz,u_daverage,v_daverage):
     # U is measured east-west velocities from ADCP
     # V is measured north-south velocities from ADCP
     # Z is the measurement depths of U and V
-    # uv_daverage is depth averaged velocity (Set to 0 for real-time)
+    # uv_daverage is depth averaged velocity (Not applicable for real-time)
     
-    ##########################################################################        
+    ##########################################################################
+            
     # Take difference between bin lengths for bin size [m]
-        bin_size = np.diff(bins)[0]
-        bin_num = len(bins)
+    bin_size = np.diff(bins)[0]
+    bin_num = len(bins)
+    
+    # This creates a grid of the ACTUAL depths of the ADCP bins by adding the
+    # depths of the ADCP bins to the actual depth of the instrument
+    [bdepth,bbins]=np.meshgrid(depth,bins)
+    bin_depth = bdepth+bbins  
+    Z = bin_depth
+    
+    # Set knowns from Equations 19 from Visbeck (2002) page 800
+    # Maximum number of observations (nd) is given by the number of velocity
+    # estimates per ping (nbin) times the number of profiles per cast (nt)
+    nbin = U.shape[0]  # number of programmed ADCP bins per individual profile
+    nt   = U.shape[1]  # number of individual velocity profiles
+    nd   = nbin*nt      # G dimension (1) 
+    
+    # Define the edges of the bins
+    bin_edges = np.arange(0,math.floor(np.max(bin_depth)),dz).tolist()
+    
+    # Check that each bin has data in it
+    bin_count = np.empty(len(bin_edges)-1) # Preallocate memory
+    bin_count[:] = np.NaN
+    
+    for k in np.arange(len(bin_edges))[:-1]:
+        # Create index of depth values that fall inside the bin edges
+        ii = np.where((bin_depth > bin_edges[k]) & (bin_depth < bin_edges[k+1]))
+        bin_count[k] = len(bin_depth[ii])
+        ii = []
+    
+    # Create list of bin centers    
+    bin_new = [x+dz/2 for x in bin_edges[:-1]]
+    
+    # Chop off the top of profile if no data
+    ind = np.argmax(bin_count > 0) # Stops at first index greater than 0
+    bin_new = bin_new[ind:]        # Removes all bins above first with data
+    z1 = bin_new[0]                # Depth of center of first bin with data
+    
+    # Create and populate G
+    nz = len(bin_new)  # number of ocean velocities desired in output profile
+    nm = nz + nt       # G dimension (2), number of unknowns
+    # Let's build the corresponding coefficient matrix G 
+    G = np.zeros((nd,nm))
+    
+    # Indexing of the G matrix was taken from Todd et al. 2012
+    for ii in np.arange(nt):           # Number of ADCP profiles per cast
+        for jj in np.arange(nbin):     # Number of measured bins per profile
+            
+            # Uctd part of matrix
+            G[(nbin*(ii-1))+jj,ii] = 1
+            
+            # This will fill in the Uocean part of the matrix. It loops through
+            # all Z members and places them in the proper location in the G matrix
+            
+            # Find the difference between all bin centers and the current Z value        
+            dx = abs(bin_new-Z[ii,jj])
+            
+            # Find the minimum of these differences
+            minx = np.nanmin(dx)
+            
+            # Finds bin_new index of the first match of Z and bin_new    
+            idx = np.argmin(dx-minx)
+            
+            G[(nbin*(ii-1))+jj,nt+idx] = 1
+            del dx, minx, idx
+        
+    
+    # Reshape U and V into the format of the d column vector
+    
+    d_u = U.transpose()
+    d_u = d_u.flatten()
+    
+    d_v = V.transpose()
+    d_v = d_v.flatten()
+    
+    
+    ##########################################################################
+    ## This chunk of code containts the constraints for depth averaged currents
+    ## which we likely won't be using for the real-time processing
+    
+    # Need to calculate C (Todd et al. 2017) based on our inputs 
+    # This creates a row that has the same # of columns as G. The elements
+    # of the row follow the trapezoid rule which is used because of the
+    # extension of the first bin with data to the surface. The last entry of
+    # the row corresponds to the max depth reached by the glider, any bins
+    # below that should have already been removed.
 
-        # This creates a grid of the ACTUAL depths of the ADCP bins by adding the
-        # depths of the ADCP bins to the actual depth of the instrument
-        [bdepth,bbins]=np.meshgrid(depth,bins)
-        bin_depth = bdepth+bbins  
-        Z = bin_depth
+    #constraint = np.concatenate(([np.zeros(nt)], [z1/2], [z1/2+dz/2], [[dz]*(nz-3)], [dz/2]), axis=None)
+    
+    # To find C, we use the equation of the norm and set norm=1 because we
+    # desire unity. The equation requires we take the sum of the squares of the
+    # entries in constraint.
+    
+    #sqr_constraint = constraint*constraint
+    #sum_sqr_constraint = np.sum(sqr_constraint)
+    
+    # Then we can solve for the value of C needed to maintain unity 
+    
+    #C = H*(1/np.sqrt(sum_sqr_constraint))
+    
+    # This is where you would add the constraint for the depth averaged
+    # velocity from Todd et al., (2011/2017)
+    
+    # These are the lines in MATLAB, the du would replace d_u from here on out
+    ###du = [d_u; C*uv_daverage(1)]; 
+    ###dv = [d_v; C*uv_daverage(2)];
+    
+    # Build Gstar
+    # Keep this out because not using depth averaged currents
+    #Gstar = np.vstack((G, (C/H)*constraint))
+    
+    ##########################################################################
+    
+    # Build the d matrix
+    d = list(map(complex,d_u, d_v))
+    
+    ##### Inversion!
+    
+    ## If want to do with a sparse matrix sol'n, look at scipy
+    #Gs = scipy.sparse(Gstar)
 
-        # Set knowns from Equations 19 from Visbeck (2002) page 800
-        # Maximum number of observations (nd) is given by the number of velocity
-        # estimates per ping (nbin) times the number of profiles per cast (nt)
-        nbin = U.shape[0]  # number of programmed ADCP bins per individual profile
-        nt   = U.shape[1]  # number of individual velocity profiles
-        nd   = nbin*nt      # G dimension (1) 
-
-        # Define the edges of the bins
-        bin_edges = np.arange(0,math.floor(np.max(bin_depth)),dz).tolist()
-
-        # Check that each bin has data in it
-        bin_count = np.empty(len(bin_edges)-1) # Preallocate memory
-        bin_count[:] = np.NaN
-
-        for k in np.arange(len(bin_edges))[:-1]:
-            # Create index of depth values that fall inside the bin edges
-            ii = np.where((bin_depth > bin_edges[k]) & (bin_depth < bin_edges[k+1]))
-            bin_count[k] = len(bin_depth[ii])
-            ii = []
-
-        # Create list of bin centers    
-        bin_new = [x+dz/2 for x in bin_edges[:-1]]
-
-        # Chop off the top of profile if no data
-        ind = np.argmax(bin_count > 0) # Stops at first index greater than 0
-        bin_new = bin_new[ind:]        # Removes all bins above first with data
-        z1 = bin_new[0]                # Depth of center of first bin with data
-
-        # Create and populate G
-        nz = len(bin_new)  # number of ocean velocities desired in output profile
-        nm = nz + nt       # G dimension (2), number of unknowns
-        # Let's build the corresponding coefficient matrix G 
-        G = np.zeros((nd,nm))
-
-        # Indexing of the G matrix was taken from Todd et al. 2012
-        for ii in np.arange(nt):           # Number of ADCP profiles per cast
-            for jj in np.arange(nbin):     # Number of measured bins per profile
-
-                # Uctd part of matrix
-                G[(nbin*(ii-1))+jj,ii] = 1
-
-                # This will fill in the Uocean part of the matrix. It loops through
-                # all Z members and places them in the proper location in the G matrix
-
-                # Find the difference between all bin centers and the current Z value        
-                dx = abs(bin_new-Z[ii,jj])
-
-                # Find the minimum of these differences
-                minx = np.nanmin(dx)
-
-                # Finds bin_new index of the first match of Z and bin_new    
-                idx = np.argmin(dx-minx)
-
-                G[(nbin*(ii-1))+jj,nt+idx] = 1
-                del dx, minx, idx
-
-
-        # Reshape U and V into the format of the d column vector
-        d_u = np.flip(U.transpose(),axis=0)
-        d_u = d_u.flatten()
-        d_v = np.flip(V.transpose(),axis=0)
-        d_v = d_v.flatten()
-
-
-        ##########################################################################
-        ## This chunk of code containts the constraints for depth averaged currents
-        ## which we likely won't be using for the real-time processing
-
-        # Need to calculate C (Todd et al. 2017) based on our inputs 
-        # This creates a row that has the same # of columns as G. The elements
-        # of the row follow the trapezoid rule which is used because of the
-        # extension of the first bin with data to the surface. The last entry of
-        # the row corresponds to the max depth reached by the glider, any bins
-        # below that should have already been removed.
-
-        constraint = np.concatenate(([np.zeros(nt)], [z1/2], [z1/2+dz/2], [[dz]*(nz-3)], [dz/2]), axis=None)
-
-        # To find C, we use the equation of the norm and set norm=1 because we
-        # desire unity. The equation requires we take the sum of the squares of the
-        # entries in constraint.
-
-        sqr_constraint = constraint*constraint
-        sum_sqr_constraint = np.sum(sqr_constraint)
-
-        # Then we can solve for the value of C needed to maintain unity 
-
-        C = H*(1/np.sqrt(sum_sqr_constraint))
-
-        # This is where you would add the constraint for the depth averaged
-        # velocity from Todd et al., (2011/2017)
-
-        # OG
-        du = np.concatenate(([d_u],[C*u_daverage]), axis=None)
-        dv = np.concatenate(([d_v],[C*v_daverage]), axis=None)
-
-        # Build Gstar
-        # Keep this out because not using depth averaged currents
-        Gstar = np.vstack((G, (C/H)*constraint))
-
-        ##########################################################################
-
-        # Build the d matrix
-        d = list(map(complex,du, dv))
-
-        ##### Inversion!
-        ## If want to do with a sparse matrix sol'n, look at scipy
-        #Gs = scipy.sparse(Gstar)
-        Gs = Gstar
-
-        ms = np.linalg.solve(np.dot(Gs.conj().transpose(),Gs),Gs.conj().transpose())
-
-        ## This is a little clunky but I think the dot product fails because of
-        ## NaN's in the d vector. So, this code will replace NaN's with 0's just
-        ## for that calculation    
-        sol = np.dot(ms,np.where(np.isnan(d),0,d))
-
-        O_ls = sol[nt:]   # Ocean velocity
-        G_ls = sol[0:nt]  # Glider velocity
+    Gs = G
+    
+    ms = np.linalg.solve(np.dot(Gs.conj().transpose(),Gs),Gs.conj().transpose())
+    
+    ## This is a little clunky but I think the dot product fails because of
+    ## NaN's in the d vector. So, this code will replace NaN's with 0's just
+    ## for that calculation    
+    sol = np.dot(ms,np.where(np.isnan(d),0,d))
+        
+    O_ls = sol[nt:]   # Ocean velocity
+    G_ls = sol[0:nt]  # Glider velocity
+        
+    
+    
+    
     
     
 
