@@ -16,7 +16,9 @@ rtime=datetime.datetime(2020,1,1,0,0,0)
 
 odir='./'
 #idir = 'C:\\work\\glideradcp\\data\\ru33_2020_11_20_dvl\\pd0\\'
-idir = '/Users/joegradone/SynologyDrive/Drive/Rutgers/Research/data/Glider/RU_33/625/processed/PD0/'
+idir ='/home/hunter/Projects/glider/glideradcp/ru33_2020_11_20_dvl/pd0/'
+#idir='/home/hunter/Projects/glider/Glider_ADCP_Real_Time_Processing/'
+#idir = '/Users/joegradone/SynologyDrive/Drive/Rutgers/Research/data/Glider/RU_33/625/processed/PD0/'
 time=[]    
 depth=[] 
 pitch=[]
@@ -48,13 +50,17 @@ plt.ion()
 def main(argv):
     files=glob.glob(idir+'*.PD0')
     files.sort(key=os.path.getmtime)
-    file=files[-3]# -1 gets the last file. 
-    read_PD0(file)
-    qaqc_data()
-    process_data(U=u1,V=u2,H=35,dz=1,u_daverage=0,v_daverage=0)
- #   write_data(file)
-    plot_data()
+    files=files[-3:]#Gets the last files. 
     
+  
+    for file in files:
+        read_PD0(file)
+        qaqc_data()
+        process_data(U=u1,V=u2,H=35,dz=1,u_daverage=0,v_daverage=0)
+        write_data(file)  
+ #   plt.show()
+#   plot_data()
+#    plt.show()
 
 
 
@@ -265,7 +271,7 @@ def read_PD0(infile):
               Is=offsets[2]+2
               fmt = "<%dh" % (ncells*4)
               uvw=struct.unpack(fmt,tdat[Is:Is+ncells*4*2])
-              uvw=np.array(uvw)
+              uvw=np.array(uvw,dtype=float)
 
 #             #EI data 
 
@@ -300,6 +306,32 @@ def read_PD0(infile):
               tPG.shape=(ncells,4)#ADDED 02/11/2020
              
               bins=(np.arange(0,ncells,1,np.double)*cellsize)+bin1  
+              
+              #ADDDED 08/11/2021
+#             #BTdata 
+              Is=offsets[6]
+              tmp1=struct.unpack("c",tdat[Is:Is+1])[0]
+              Is=offsets[6]+1
+              tmp2=struct.unpack("c",tdat[Is:Is+1])[0]
+              if [tmp1+tmp2]==[b'\x00\x06']:
+                  Is=offsets[6]+16
+                  tr1=struct.unpack("H",tdat[Is:Is+2])[0]       
+                  Is=offsets[6]+18
+                  tr2=struct.unpack("H",tdat[Is:Is+2])[0]    
+                  Is=offsets[6]+20
+                  tr3=struct.unpack("H",tdat[Is:Is+2])[0]    
+                  Is=offsets[6]+22
+                  tr4=struct.unpack("H",tdat[Is:Is+2])[0]     
+                  tr1=tr1/100.0     
+                  tr2=tr2/100.0     
+                  tr3=tr3/100.0     
+                  tr4=tr4/100.0
+    
+                  uvw[bins>.85*tr1,0]=float("NAN")
+                  uvw[bins>.85*tr2,1]=float("NAN")
+                  uvw[bins>.85*tr3,2]=float("NAN")
+                  uvw[bins>.85*tr4,3]=float("NAN")
+              
           
               uvw=mapdepthcells(uvw,tpitch,troll)
             
@@ -416,7 +448,6 @@ def read_PD0(infile):
     pg2=pg2[:,0:ncells]
     pg3=pg3[:,0:ncells]
     pg4=pg4[:,0:ncells]
-    
 
 
 def mapdepthcells(uvw,tpitch,troll):
@@ -584,6 +615,7 @@ def qaqc_data():
                         
 def process_data(U,V,H,dz,u_daverage,v_daverage):
     global O_ls, G_ls, bin_new    
+    
     ## Feb-2021 jgradone@marine.rutgers.edu Initial
     ## Jul-2021 jgradone@marine.rutgers.edu Updates for constraints
     
@@ -607,183 +639,198 @@ def process_data(U,V,H,dz,u_daverage,v_daverage):
     
     ##########################################################################        
     # Take difference between bin lengths for bin size [m]
-        bin_size = np.diff(bins)[0]
-        bin_num = len(bins)
+    bin_size = np.diff(bins)[0]
+    bin_num = len(bins)
 
-        # This creates a grid of the ACTUAL depths of the ADCP bins by adding the
-        # depths of the ADCP bins to the actual depth of the instrument
-        [bdepth,bbins]=np.meshgrid(depth,bins)
-        bin_depth = bdepth+bbins  
-        Z = bin_depth
+    # This creates a grid of the ACTUAL depths of the ADCP bins by adding the
+    # depths of the ADCP bins to the actual depth of the instrument
+    [bdepth,bbins]=np.meshgrid(depth,bins)
+    bin_depth = bdepth+bbins  
+    Z = bin_depth
 
-        # Set knowns from Equations 19 from Visbeck (2002) page 800
-        # Maximum number of observations (nd) is given by the number of velocity
-        # estimates per ping (nbin) times the number of profiles per cast (nt)
-        nbin = U.shape[0]  # number of programmed ADCP bins per individual profile
-        nt   = U.shape[1]  # number of individual velocity profiles
-        nd   = nbin*nt      # G dimension (1) 
+    # Set knowns from Equations 19 from Visbeck (2002) page 800
+    # Maximum number of observations (nd) is given by the number of velocity
+    # estimates per ping (nbin) times the number of profiles per cast (nt)
+    nbin = U.shape[0]  # number of programmed ADCP bins per individual profile
+    nt   = U.shape[1]  # number of individual velocity profiles
+    nd   = nbin*nt      # G dimension (1) 
 
-        # Define the edges of the bins
-        bin_edges = np.arange(0,math.floor(np.max(bin_depth)),dz).tolist()
+    # Define the edges of the bins
+    bin_edges = np.arange(0,math.floor(np.max(bin_depth)),dz).tolist()
 
-        # Check that each bin has data in it
-        bin_count = np.empty(len(bin_edges)-1) # Preallocate memory
-        bin_count[:] = np.NaN
+    # Check that each bin has data in it
+    bin_count = np.empty(len(bin_edges)-1) # Preallocate memory
+    bin_count[:] = np.NaN
 
-        for k in np.arange(len(bin_edges))[:-1]:
-            # Create index of depth values that fall inside the bin edges
-            ii = np.where((bin_depth > bin_edges[k]) & (bin_depth < bin_edges[k+1]))
-            bin_count[k] = len(bin_depth[ii])
-            ii = []
+    for k in np.arange(len(bin_edges))[:-1]:
+        # Create index of depth values that fall inside the bin edges
+        ii = np.where((bin_depth > bin_edges[k]) & (bin_depth < bin_edges[k+1]))
+        bin_count[k] = len(bin_depth[ii])
+        ii = []
 
-        # Create list of bin centers    
-        bin_new = [x+dz/2 for x in bin_edges[:-1]]
+    # Create list of bin centers    
+    bin_new = [x+dz/2 for x in bin_edges[:-1]]
 
-        # Chop off the top of profile if no data
-        ind = np.argmax(bin_count > 0) # Stops at first index greater than 0
-        bin_new = bin_new[ind:]        # Removes all bins above first with data
-        z1 = bin_new[0]                # Depth of center of first bin with data
+    # Chop off the top of profile if no data
+    ind = np.argmax(bin_count > 0) # Stops at first index greater than 0
+    bin_new = bin_new[ind:]        # Removes all bins above first with data
+    z1 = bin_new[0]                # Depth of center of first bin with data
 
-        # Create and populate G
-        nz = len(bin_new)  # number of ocean velocities desired in output profile
-        nm = nz + nt       # G dimension (2), number of unknowns
-        # Let's build the corresponding coefficient matrix G 
-        G = np.zeros((nd,nm))
+    # Create and populate G
+    nz = len(bin_new)  # number of ocean velocities desired in output profile
+    nm = nz + nt       # G dimension (2), number of unknowns
+    # Let's build the corresponding coefficient matrix G 
+    G = np.zeros((nd,nm))
 
-        # Indexing of the G matrix was taken from Todd et al. 2012
-        for ii in np.arange(nt):           # Number of ADCP profiles per cast
-            for jj in np.arange(nbin):     # Number of measured bins per profile
+    # Indexing of the G matrix was taken from Todd et al. 2012
+    for ii in np.arange(nt):           # Number of ADCP profiles per cast
+        for jj in np.arange(nbin):     # Number of measured bins per profile
 
-                # Uctd part of matrix
-                G[(nbin*(ii-1))+jj,ii] = 1
+            # Uctd part of matrix
+            G[(nbin*(ii-1))+jj,ii] = 1
 
-                # This will fill in the Uocean part of the matrix. It loops through
-                # all Z members and places them in the proper location in the G matrix
+            # This will fill in the Uocean part of the matrix. It loops through
+            # all Z members and places them in the proper location in the G matrix
 
-                # Find the difference between all bin centers and the current Z value        
-                dx = abs(bin_new-Z[ii,jj])
+            # Find the difference between all bin centers and the current Z value        
+            dx = abs(bin_new-Z[ii,jj])
 
-                # Find the minimum of these differences
-                minx = np.nanmin(dx)
+            # Find the minimum of these differences
+            minx = np.nanmin(dx)
 
-                # Finds bin_new index of the first match of Z and bin_new    
-                idx = np.argmin(dx-minx)
+            # Finds bin_new index of the first match of Z and bin_new    
+            idx = np.argmin(dx-minx)
 
-                G[(nbin*(ii-1))+jj,nt+idx] = 1
-                del dx, minx, idx
-
-
-        # Reshape U and V into the format of the d column vector
-        d_u = np.flip(U.transpose(),axis=0)
-        d_u = d_u.flatten()
-        d_v = np.flip(V.transpose(),axis=0)
-        d_v = d_v.flatten()
+            G[(nbin*(ii-1))+jj,nt+idx] = 1
+            del dx, minx, idx
 
 
-        ##########################################################################
-        ## This chunk of code containts the constraints for depth averaged currents
-        ## which we likely won't be using for the real-time processing
+    # Reshape U and V into the format of the d column vector
+    d_u = np.flip(U.transpose(),axis=0)
+    d_u = d_u.flatten()
+    d_v = np.flip(V.transpose(),axis=0)
+    d_v = d_v.flatten()
 
-        # Need to calculate C (Todd et al. 2017) based on our inputs 
-        # This creates a row that has the same # of columns as G. The elements
-        # of the row follow the trapezoid rule which is used because of the
-        # extension of the first bin with data to the surface. The last entry of
-        # the row corresponds to the max depth reached by the glider, any bins
-        # below that should have already been removed.
 
-        constraint = np.concatenate(([np.zeros(nt)], [z1/2], [z1/2+dz/2], [[dz]*(nz-3)], [dz/2]), axis=None)
+    ##########################################################################
+    ## This chunk of code containts the constraints for depth averaged currents
+    ## which we likely won't be using for the real-time processing
 
-        # To find C, we use the equation of the norm and set norm=1 because we
-        # desire unity. The equation requires we take the sum of the squares of the
-        # entries in constraint.
+    # Need to calculate C (Todd et al. 2017) based on our inputs 
+    # This creates a row that has the same # of columns as G. The elements
+    # of the row follow the trapezoid rule which is used because of the
+    # extension of the first bin with data to the surface. The last entry of
+    # the row corresponds to the max depth reached by the glider, any bins
+    # below that should have already been removed.
 
-        sqr_constraint = constraint*constraint
-        sum_sqr_constraint = np.sum(sqr_constraint)
+    constraint = np.concatenate(([np.zeros(nt)], [z1/2], [z1/2+dz/2], [[dz]*(nz-3)], [dz/2]), axis=None)
 
-        # Then we can solve for the value of C needed to maintain unity 
+    # To find C, we use the equation of the norm and set norm=1 because we
+    # desire unity. The equation requires we take the sum of the squares of the
+    # entries in constraint.
 
-        C = H*(1/np.sqrt(sum_sqr_constraint))
+    sqr_constraint = constraint*constraint
+    sum_sqr_constraint = np.sum(sqr_constraint)
 
-        # This is where you would add the constraint for the depth averaged
-        # velocity from Todd et al., (2011/2017)
+    # Then we can solve for the value of C needed to maintain unity 
 
-        # OG
-        du = np.concatenate(([d_u],[C*u_daverage]), axis=None)
-        dv = np.concatenate(([d_v],[C*v_daverage]), axis=None)
+    C = H*(1/np.sqrt(sum_sqr_constraint))
 
-        # Build Gstar
-        # Keep this out because not using depth averaged currents
-        Gstar = np.vstack((G, (C/H)*constraint))
+    # This is where you would add the constraint for the depth averaged
+    # velocity from Todd et al., (2011/2017)
 
-        ##########################################################################
+    # OG
+    du = np.concatenate(([d_u],[C*u_daverage]), axis=None)
+    dv = np.concatenate(([d_v],[C*v_daverage]), axis=None)
 
-        # Build the d matrix
-        d = list(map(complex,du, dv))
+    # Build Gstar
+    # Keep this out because not using depth averaged currents
+    Gstar = np.vstack((G, (C/H)*constraint))
 
-        ##### Inversion!
-        ## If want to do with a sparse matrix sol'n, look at scipy
-        #Gs = scipy.sparse(Gstar)
-        Gs = Gstar
+    ##########################################################################
 
-        ms = np.linalg.solve(np.dot(Gs.conj().transpose(),Gs),Gs.conj().transpose())
+    # Build the d matrix
+    d = list(map(complex,du, dv))
 
-        ## This is a little clunky but I think the dot product fails because of
-        ## NaN's in the d vector. So, this code will replace NaN's with 0's just
-        ## for that calculation    
-        sol = np.dot(ms,np.where(np.isnan(d),0,d))
+    ##### Inversion!
+    ## If want to do with a sparse matrix sol'n, look at scipy
+    #Gs = scipy.sparse(Gstar)
+    Gs = Gstar
 
-        O_ls = sol[nt:]   # Ocean velocity
-        G_ls = sol[0:nt]  # Glider velocity
+    ms = np.linalg.solve(np.dot(Gs.conj().transpose(),Gs),Gs.conj().transpose())
+
+    ## This is a little clunky but I think the dot product fails because of
+    ## NaN's in the d vector. So, this code will replace NaN's with 0's just
+    ## for that calculation    
+    sol = np.dot(ms,np.where(np.isnan(d),0,d))
+
+    O_ls = sol[nt:]   # Ocean velocity
+    G_ls = sol[0:nt]  # Glider velocity
+
+
+
     
-    
-
-        
     
     
     
     
 def write_data(infile):
-    global O_ls, G_ls, bin_new   
+    global O_ls, G_ls, bin_new,time
     basefile=os.path.basename(infile)
     ncfile=odir+basefile.replace('PD0','nc')
     print('Writing profile DATA : '+ncfile)
-        
     ncfile = netCDF4.Dataset(ncfile, 'w', format='NETCDF4')
     ncfile.Conventions= "CF-1.6"
 #    
 #    
-#     ncfile.createDimension('time', None)
-#     ncfile.createDimension('depth', )
-#     ncfile.createVariable('time','f8',('time',))
+    ncfile.createDimension('time', 1)
+    ncfile.createDimension('depth', len(bin_new))
+    ncfile.createVariable('time','f8',('time'))
+    ncfile.createVariable('timemax','f8',('time'))
+    ncfile.createVariable('timemin','f8',('time'))
+    ncfile.createVariable('depth','f8',('depth'))
     
-#     ncfile.createVariable('u','f8',('time','depth'))
-#     ncfile.createVariable('v','f8',('time','depth'))
-    
+    ncfile.createVariable('u','f8',('time','depth'))
+    ncfile.createVariable('v','f8',('time','depth'))
+    print(np.mean(time))
     
 # #        
 
-#     ncfile.variables['time'][:]=time
-#     ncfile.variables['time'].units='days since 2020-01-01 00:00:00'
-#     ncfile.variables['time'].long_name='time'
-#     ncfile.variables['time'].standard_name='time'
+    ncfile.variables['time'][:]=np.mean(time)
+    ncfile.variables['time'].units='days since 2020-01-01 00:00:00'
+    ncfile.variables['time'].long_name='time'
+    ncfile.variables['time'].standard_name='time'
+
+
+    ncfile.variables['timemax'][:]=np.max(time)
+    ncfile.variables['timemax'].units='days since 2020-01-01 00:00:00'
+    ncfile.variables['timemax'].long_name='maximum time'
+    ncfile.variables['timemax'].standard_name='timemax'
+
+
+    ncfile.variables['timemin'][:]=np.min(time)
+    ncfile.variables['timemin'].units='days since 2020-01-01 00:00:00'
+    ncfile.variables['timemin'].long_name='minimum time'
+    ncfile.variables['timemin'].standard_name='timemin'
 
     
 # #    
-#     ncfile.variables['depth'][:]=bins_new
-#     ncfile.variables['depth'].units='m'
-#     ncfile.variables['depth'].long_name='Cell Depth'
-#     ncfile.variables['depth'].standard_name='depth'
-# #    
+    ncfile.variables['depth'][:]=bin_new
+    ncfile.variables['depth'].units='m'
+    ncfile.variables['depth'].long_name='Cell Depth'
+    ncfile.variables['depth'].standard_name='depth'
+#        plt.plot(np.real(O_ls),bin_new,label='u - velocity')
+#    plt.plot(np.imag(O_ls),bin_new,label='v - velocity')
 
-#     ncfile.variables['u'][:]=u/1000.0
-#     ncfile.variables['u'].units='m s-1'
-#     ncfile.variables['u'].long_name='eastward water velocity'
-#     ncfile.variables['u'].standard_name='eastward_sea_water_velocity'
+    ncfile.variables['u'][:]=np.real(O_ls)
+    ncfile.variables['u'].units='m s-1'
+    ncfile.variables['u'].long_name='eastward water velocity'
+    ncfile.variables['u'].standard_name='eastward_sea_water_velocity'
 
-#     ncfile.variables['v'][:]=v/1000.0
-#     ncfile.variables['v'].units='m s-1'
-#     ncfile.variables['v'].long_name='northward water velocity'
-#     ncfile.variables['v'].standard_name='northward_sea_water_velocity'
+    ncfile.variables['v'][:]=np.imag(O_ls)
+    ncfile.variables['v'].units='m s-1'
+    ncfile.variables['v'].long_name='northward water velocity'
+    ncfile.variables['v'].standard_name='northward_sea_water_velocity'
 
     # ncfile.variables['w'][:]=w/1000.0
     # ncfile.variables['w'].units='m s-1'
@@ -826,12 +873,12 @@ def sph2cart(az,elev,r):
 
 def plot_data():
     print('Plotting DVL DATA')       
-    print(bins)
-    plt.figure(1)
-    plt.clf()
-    plt.plot(time,-depth,'r')
-    plt.ylabel('Depth [m]')
-    plt.grid(True)
+    # print(bins)
+    # plt.figure(1)
+    # plt.clf()
+    # plt.plot(time,-depth,'r')
+    # plt.ylabel('Depth [m]')
+    # plt.grid(True)
     
     plt.figure(2)
     plt.clf()
@@ -849,34 +896,34 @@ def plot_data():
     plt.grid(True)
     
     
-    cmap = plt.get_cmap('jet')
-    [x,y]=np.meshgrid(time,bins)
-    [bdepth,bbins]=np.meshgrid(depth,bins)
+    # cmap = plt.get_cmap('jet')
+    # [x,y]=np.meshgrid(time,bins)
+    # [bdepth,bbins]=np.meshgrid(depth,bins)
 
-    by=bdepth+bbins
+    # by=bdepth+bbins
     
-    fig2=plt.figure(4)
-    plt.clf()
+    # fig2=plt.figure(4)
+    # plt.clf()
     
-    ax1=plt.subplot(411)
-    pc2=plt.pcolormesh(x,-by,u1.transpose(),cmap=cmap,vmin=-30,vmax=30)
-    plt.plot(time,-depth,'k')
-    fig2.colorbar(pc2,ax=ax1)
+    # ax1=plt.subplot(411)
+    # pc2=plt.pcolormesh(x,-by,u1.transpose(),cmap=cmap,vmin=-30,vmax=30)
+    # plt.plot(time,-depth,'k')
+    # fig2.colorbar(pc2,ax=ax1)
 
-    ax1=plt.subplot(412)
-    pc2=plt.pcolormesh(x,-by,u2.transpose(),cmap=cmap,vmin=-30,vmax=30)
-    plt.plot(time,-depth,'k')
-    fig2.colorbar(pc2,ax=ax1)
+    # ax1=plt.subplot(412)
+    # pc2=plt.pcolormesh(x,-by,u2.transpose(),cmap=cmap,vmin=-30,vmax=30)
+    # plt.plot(time,-depth,'k')
+    # fig2.colorbar(pc2,ax=ax1)
     
-    ax1=plt.subplot(413)
-    pc2=plt.pcolormesh(x,-by,u3.transpose(),cmap=cmap,vmin=-30,vmax=30)
-    plt.plot(time,-depth,'k')
-    fig2.colorbar(pc2,ax=ax1)
+    # ax1=plt.subplot(413)
+    # pc2=plt.pcolormesh(x,-by,u3.transpose(),cmap=cmap,vmin=-30,vmax=30)
+    # plt.plot(time,-depth,'k')
+    # fig2.colorbar(pc2,ax=ax1)
     
-    ax1=plt.subplot(414)
-    pc2=plt.pcolormesh(x,-by,u4.transpose(),cmap=cmap,vmin=-30,vmax=30)
-    plt.plot(time,-depth,'k')
-    fig2.colorbar(pc2,ax=ax1)
+    # ax1=plt.subplot(414)
+    # pc2=plt.pcolormesh(x,-by,u4.transpose(),cmap=cmap,vmin=-30,vmax=30)
+    # plt.plot(time,-depth,'k')
+    # fig2.colorbar(pc2,ax=ax1)
     
     
     
@@ -905,23 +952,28 @@ def plot_data():
     # plt.show()
     
     ## A few test plots
-    plt.figure(6)
-    plt.plot(np.real(O_ls),bin_new,label='u - velocity')
-    plt.plot(np.imag(O_ls),bin_new,label='v - velocity')
-    plt.ylim(30,0)
-    plt.legend()
+    # plt.figure(6)
+    # plt.plot(np.real(O_ls),bin_new,label='u - velocity')
+    # plt.plot(np.imag(O_ls),bin_new,label='v - velocity')
+    # plt.ylim(30,0)
+    # plt.legend()
+    # plt.figure(7)
+    # plt.plot(np.real(G_ls),bin_new,label='u - velocity')
+    # plt.plot(np.imag(G_ls),bin_new,label='v - velocity')
+    # plt.ylim(30,0)
+    # plt.legend()
   
-    # Just give me one profile
-    fig3 = plt.figure(7)
-    pc3 = plt.pcolormesh(x,-by,u1.transpose(),cmap=cmap,vmin=-1,vmax=1)
-    plt.plot(time,-depth,'k')
-    plt.title('20 < abs(Pitch) < 30')    
-    fig3.colorbar(pc3)
+    # # Just give me one profile
+    # fig3 = plt.figure(7)
+    # pc3 = plt.pcolormesh(x,-by,u1.transpose(),cmap=cmap,vmin=-1,vmax=1)
+    # plt.plot(time,-depth,'k')
+    # plt.title('20 < abs(Pitch) < 30')    
+    # fig3.colorbar(pc3)
     
-    dp = np.diff(pitch)
-    plt.figure(8)
-    plt.plot(dp[1:200])
-    plt.axhline(y=-5)
+    # dp = np.diff(pitch)
+    # plt.figure(8)
+    # plt.plot(dp[1:200])
+    # plt.axhline(y=-5)
     
 #def bin(s):
 #    return str(s) if s<=1 else bin(s>>1) + str(s&1)
