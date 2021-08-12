@@ -16,9 +16,9 @@ rtime=datetime.datetime(2020,1,1,0,0,0)
 
 odir='./'
 #idir = 'C:\\work\\glideradcp\\data\\ru33_2020_11_20_dvl\\pd0\\'
-idir ='/home/hunter/Projects/glider/glideradcp/ru33_2020_11_20_dvl/pd0/'
+#idir ='/home/hunter/Projects/glider/glideradcp/ru33_2020_11_20_dvl/pd0/'
 #idir='/home/hunter/Projects/glider/Glider_ADCP_Real_Time_Processing/'
-#idir = '/Users/joegradone/SynologyDrive/Drive/Rutgers/Research/data/Glider/RU_33/625/processed/PD0/'
+idir = '/Users/joegradone/SynologyDrive/Drive/Rutgers/Research/data/Glider/RU_33/625/processed/PD0/'
 time=[]    
 depth=[] 
 pitch=[]
@@ -58,9 +58,8 @@ def main(argv):
         qaqc_data()
         process_data(U=u1,V=u2,H=35,dz=1,u_daverage=0,v_daverage=0)
         write_data(file)  
- #   plt.show()
-#   plot_data()
-#    plt.show()
+        plot_data()
+        plt.show()
 
 
 
@@ -896,72 +895,51 @@ def plot_data():
     plt.grid(True)
     
     
-    # cmap = plt.get_cmap('jet')
-    # [x,y]=np.meshgrid(time,bins)
-    # [bdepth,bbins]=np.meshgrid(depth,bins)
+    cmap = plt.get_cmap('jet')
+    [x,y]=np.meshgrid(time,bins)
+    [bdepth,bbins]=np.meshgrid(depth,bins)
 
-    # by=bdepth+bbins
+    by=bdepth+bbins
     
-    # fig2=plt.figure(4)
-    # plt.clf()
-    
-    # ax1=plt.subplot(411)
-    # pc2=plt.pcolormesh(x,-by,u1.transpose(),cmap=cmap,vmin=-30,vmax=30)
-    # plt.plot(time,-depth,'k')
-    # fig2.colorbar(pc2,ax=ax1)
 
-    # ax1=plt.subplot(412)
-    # pc2=plt.pcolormesh(x,-by,u2.transpose(),cmap=cmap,vmin=-30,vmax=30)
-    # plt.plot(time,-depth,'k')
-    # fig2.colorbar(pc2,ax=ax1)
-    
-    # ax1=plt.subplot(413)
-    # pc2=plt.pcolormesh(x,-by,u3.transpose(),cmap=cmap,vmin=-30,vmax=30)
-    # plt.plot(time,-depth,'k')
-    # fig2.colorbar(pc2,ax=ax1)
-    
-    # ax1=plt.subplot(414)
-    # pc2=plt.pcolormesh(x,-by,u4.transpose(),cmap=cmap,vmin=-30,vmax=30)
-    # plt.plot(time,-depth,'k')
-    # fig2.colorbar(pc2,ax=ax1)
     
     
     
-    # fig3=plt.figure(5)
-    # plt.clf()
+    fig3=plt.figure(5)
+    plt.clf()
     
-    # ax1=plt.subplot(411)
-    # pc2=plt.pcolormesh(time,-bins,u1.transpose(),cmap=cmap,vmin=-1,vmax=1)
-    # #plt.plot(time,-depth,'k')
-    # fig3.colorbar(pc2,ax=ax1)
+    ax1=plt.subplot(411)
+    pc2=plt.pcolormesh(time,-bins,u1.transpose(),cmap=cmap,vmin=-1,vmax=1)
+    #plt.plot(time,-depth,'k')
+    fig3.colorbar(pc2,ax=ax1)
 
-    # ax1=plt.subplot(412)
-    # pc2=plt.pcolormesh(time,-bins,u2.transpose(),cmap=cmap,vmin=-1,vmax=1)
-    # #plt.plot(time,-depth,'k')
-    # fig3.colorbar(pc2,ax=ax1)
+    ax1=plt.subplot(412)
+    pc2=plt.pcolormesh(time,-bins,u2.transpose(),cmap=cmap,vmin=-1,vmax=1)
+    #plt.plot(time,-depth,'k')
+    fig3.colorbar(pc2,ax=ax1)
     
-    # ax1=plt.subplot(413)
-    # pc2=plt.pcolormesh(time,-bins,u3.transpose(),cmap=cmap,vmin=-1,vmax=1)
-    # #plt.plot(time,-depth,'k')
-    # fig3.colorbar(pc2,ax=ax1)
+    ax1=plt.subplot(413)
+    pc2=plt.pcolormesh(time,-bins,u3.transpose(),cmap=cmap,vmin=-1,vmax=1)
+    #plt.plot(time,-depth,'k')
+    fig3.colorbar(pc2,ax=ax1)
     
-    # ax1=plt.subplot(414)
-    # pc2=plt.pcolormesh(time,-bins,u4.transpose(),cmap=cmap,vmin=-1,vmax=1)
-    # #plt.plot(time,-depth,'k')
-    # fig3.colorbar(pc2,ax=ax1)
-    # plt.show()
+    ax1=plt.subplot(414)
+    pc2=plt.pcolormesh(time,-bins,u4.transpose(),cmap=cmap,vmin=-1,vmax=1)
+    #plt.plot(time,-depth,'k')
+    fig3.colorbar(pc2,ax=ax1)
+    plt.show()
     
     ## A few test plots
-    # plt.figure(6)
-    # plt.plot(np.real(O_ls),bin_new,label='u - velocity')
-    # plt.plot(np.imag(O_ls),bin_new,label='v - velocity')
-    # plt.ylim(30,0)
-    # plt.legend()
-    # plt.figure(7)
-    # plt.plot(np.real(G_ls),bin_new,label='u - velocity')
-    # plt.plot(np.imag(G_ls),bin_new,label='v - velocity')
-    # plt.ylim(30,0)
-    # plt.legend()
+    plt.figure(6)
+    plt.plot(np.real(O_ls),bin_new,label='u - velocity')
+    plt.plot(np.imag(O_ls),bin_new,label='v - velocity')
+    plt.ylim(30,0)
+    plt.legend()
+    plt.figure(7)
+    plt.plot(np.real(G_ls),bin_new,label='u - velocity')
+    plt.plot(np.imag(G_ls),bin_new,label='v - velocity')
+    plt.ylim(30,0)
+    plt.legend()
   
     # # Just give me one profile
     # fig3 = plt.figure(7)
@@ -986,51 +964,4 @@ if __name__ == "__main__":
     main(sys.argv)
     print('FINISHED')
     
-
-    
-
-# ## Some test plots    
-
-# cmap = plt.get_cmap('bwr')
-# [x,y]=np.meshgrid(time,bins)
-# [bdepth,bbins]=np.meshgrid(depth,bins)
-
-# by=bdepth+bbins
-
-
-
-# ## Weird that U velocity is pos during downcast and neg during upcast
-# fig99=plt.figure(99)
-# #plt.figure(figsize=(14,8))
-# pc99=plt.pcolormesh(x,-by,u1.transpose(),cmap=cmap,vmin=-1,vmax=1)
-# plt.plot(time,-depth,'k')
-# #plt.ylim(-22,0)
-# fig99.colorbar(pc99)
-
-
-
-
-
-
-# fig98=plt.figure(98)
-# #plt.figure(figsize=(14,8))
-# pc98=plt.pcolormesh(x,-by,u2.transpose(),cmap=cmap,vmin=-1,vmax=1)
-# plt.plot(time,-depth,'k')
-# #plt.ylim(-22,0)
-# fig98.colorbar(pc98)
-
-
-
-
-
-
-# ## Weird that W velocity is up during downcast and down during upcast
-# fig97=plt.figure(97)
-# #plt.figure(figsize=(14,8))
-# pc97=plt.pcolormesh(x,-by,u3.transpose(),cmap=cmap,vmin=-1,vmax=1)
-# plt.plot(time,-depth,'k')
-# #plt.ylim(-22,0)
-# fig97.colorbar(pc97)
-
-
 
