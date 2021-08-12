@@ -58,8 +58,8 @@ def main(argv):
         qaqc_data()
         process_data(U=u1,V=u2,H=35,dz=1,u_daverage=0,v_daverage=0)
         write_data(file)  
-        plot_data()
-        plt.show()
+        #plot_data()
+        #plt.show()
 
 
 
