@@ -50,7 +50,7 @@ plt.ion()
 def main(argv):
     files=glob.glob(idir+'*.PD0')
     files.sort(key=os.path.getmtime)
-    files=files[-3:]#Gets the last files. 
+    #files=files[-3:]#Gets the last files. 
     
   
     for file in files:
