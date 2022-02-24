@@ -18,7 +18,7 @@ odir='./'
 #idir = 'C:\\work\\glideradcp\\data\\ru33_2020_11_20_dvl\\pd0\\'
 #idir ='/home/hunter/Projects/glider/glideradcp/ru33_2020_11_20_dvl/pd0/'
 #idir='/home/hunter/Projects/glider/Glider_ADCP_Real_Time_Processing/'
-idir = '/Users/joegradone/SynologyDrive/Drive/Rutgers/Research/data/Glider/RU_33/625/processed/PD0/'
+idir = 'C:\\work\\glideradcp\\stthomas\\'
 time=[]    
 depth=[] 
 pitch=[]
@@ -46,11 +46,13 @@ O_ls=[]
 G_ls=[]          
 plt.ion()
 
+corr_cut=80
+ei_cut=70
 
 def main(argv):
     files=glob.glob(idir+'*.PD0')
     files.sort(key=os.path.getmtime)
-    #files=files[-3:]#Gets the last files. 
+    files=files[-3:]#Gets the last files. 
     
   
     for file in files:
@@ -58,8 +60,8 @@ def main(argv):
         qaqc_data()
         process_data(U=u1,V=u2,H=35,dz=1,u_daverage=0,v_daverage=0)
         write_data(file)  
-        #plot_data()
-        #plt.show()
+        plot_data()
+        plt.show()
 
 
 
@@ -321,17 +323,21 @@ def read_PD0(infile):
                   tr3=struct.unpack("H",tdat[Is:Is+2])[0]    
                   Is=offsets[6]+22
                   tr4=struct.unpack("H",tdat[Is:Is+2])[0]     
+                 
                   tr1=tr1/100.0     
                   tr2=tr2/100.0     
                   tr3=tr3/100.0     
                   tr4=tr4/100.0
-    
-                  uvw[bins>.85*tr1,0]=float("NAN")
-                  uvw[bins>.85*tr2,1]=float("NAN")
-                  uvw[bins>.85*tr3,2]=float("NAN")
-                  uvw[bins>.85*tr4,3]=float("NAN")
+                  if tr1>0:
+                      uvw[bins>.85*tr1,0]=float("NAN")
+                  if tr2>0:
+                      uvw[bins>.85*tr2,1]=float("NAN")
+                  if tr3>0:
+                      uvw[bins>.85*tr3,2]=float("NAN")
+                  if tr4>0:
+                      uvw[bins>.85*tr4,3]=float("NAN")
               
-          
+              
               uvw=mapdepthcells(uvw,tpitch,troll)
             
              
@@ -578,8 +584,15 @@ def qaqc_data():
     u3 = u3/1000
     u4 = u4/1000
     
-    
-    
+    u1[c1 < corr_cut] = float("NAN")
+    u2[c2 < corr_cut] = float("NAN")
+    u3[c3 < corr_cut] = float("NAN")
+    u4[c4 < corr_cut] = float("NAN")  
+
+    u1[ei1 < ei_cut] = float("NAN")
+    u2[ei2 < ei_cut] = float("NAN")
+    u3[ei3 < ei_cut] = float("NAN")
+    u4[ei4 < ei_cut] = float("NAN")  
     # Remove beams with too low of a percent good value
     # Firing and Gordon (1990) used 80%
     # Fischer and Visbeck (1993) used 30%
@@ -775,7 +788,7 @@ def process_data(U,V,H,dz,u_daverage,v_daverage):
     
 def write_data(infile):
     global O_ls, G_ls, bin_new,time
-    basefile=os.path.basename(infile)
+    basefile=os.path.basename(infile).upper()
     ncfile=odir+basefile.replace('PD0','nc')
     print('Writing profile DATA : '+ncfile)
     ncfile = netCDF4.Dataset(ncfile, 'w', format='NETCDF4')
@@ -927,19 +940,67 @@ def plot_data():
     pc2=plt.pcolormesh(time,-bins,u4.transpose(),cmap=cmap,vmin=-1,vmax=1)
     #plt.plot(time,-depth,'k')
     fig3.colorbar(pc2,ax=ax1)
-    plt.show()
-    
+
+
+    fig4=plt.figure(6)
+    plt.clf()
+    ax1=plt.subplot(411)
+    pc2=plt.pcolormesh(time,-bins,c1.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+
+    ax1=plt.subplot(412)
+    pc2=plt.pcolormesh(time,-bins,c2.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+   
+    ax1=plt.subplot(413)
+    pc2=plt.pcolormesh(time,-bins,c3.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+   
+    ax1=plt.subplot(414)
+    pc2=plt.pcolormesh(time,-bins,c4.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
     ## A few test plots
-    plt.figure(6)
+    
+    
+
+    fig4=plt.figure(7)
+    plt.clf()
+    ax1=plt.subplot(411)
+    pc2=plt.pcolormesh(time,-bins,ei1.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+
+    ax1=plt.subplot(412)
+    pc2=plt.pcolormesh(time,-bins,ei2.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+   
+    ax1=plt.subplot(413)
+    pc2=plt.pcolormesh(time,-bins,ei3.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+   
+    ax1=plt.subplot(414)
+    pc2=plt.pcolormesh(time,-bins,ei4.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+    ## A few test plots
+    
+    
+    plt.figure(8)
     plt.plot(np.real(O_ls),bin_new,label='u - velocity')
     plt.plot(np.imag(O_ls),bin_new,label='v - velocity')
-    plt.ylim(30,0)
+    plt.ylim(300,0)
     plt.legend()
-    plt.figure(7)
-    plt.plot(np.real(G_ls),bin_new,label='u - velocity')
-    plt.plot(np.imag(G_ls),bin_new,label='v - velocity')
-    plt.ylim(30,0)
-    plt.legend()
+    # plt.figure(9)
+    # plt.plot(np.real(G_ls),bin_new,label='u - velocity')
+    # plt.plot(np.imag(G_ls),bin_new,label='v - velocity')
+    # plt.ylim(30,0)
+    # plt.legend()
   
     # # Just give me one profile
     # fig3 = plt.figure(7)
