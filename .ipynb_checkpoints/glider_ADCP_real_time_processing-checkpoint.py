@@ -1,5 +1,5 @@
+##### Imports
 #!/usr/bin/env python
-#
 import os,sys
 import glob
 import numpy as np
@@ -10,13 +10,18 @@ import struct
 import pandas as pd
 import math
 from scipy.spatial.transform import Rotation as R
-#
 
+##### Setting time origin
 rtime=datetime.datetime(2020,1,1,0,0,0)
 
+##### Set path to data
 odir='./'
 #idir = 'C:\\work\\glideradcp\\data\\ru33_2020_11_20_dvl\\pd0\\'
-idir = '/Users/joegradone/SynologyDrive/Drive/Rutgers/Research/data/Glider/RU_33/625/processed/PD0/'
+#idir ='/home/hunter/Projects/glider/glideradcp/ru33_2020_11_20_dvl/pd0/'
+#idir='/home/hunter/Projects/glider/Glider_ADCP_Real_Time_Processing/'
+idir = 'C:\\work\\glideradcp\\stthomas\\'
+
+##### Variables read from PD0
 time=[]    
 depth=[] 
 pitch=[]
@@ -45,19 +50,22 @@ G_ls=[]
 plt.ion()
 
 
+##### Main function to run through entire processing workflow
 def main(argv):
     files=glob.glob(idir+'*.PD0')
     files.sort(key=os.path.getmtime)
-    file=files[-3]# -1 gets the last file. 
-    read_PD0(file)
-    qaqc_data()
-    process_data(U=u1,V=u2,H=35,dz=4)
- #   write_data(file)
-    plot_data()
+    files=files[-3:]#Gets the last files. 
     
+    for file in files:
+        read_PD0(file)
+        qaqc_data()
+        process_data(U=u1,V=u2,H=35,dz=1,u_daverage=0,v_daverage=0)
+        write_data(file)  
+        plot_data()
+        plt.show()
 
 
-
+##### Read in binary PD0 file
 def read_PD0(infile):
     global time,depth,pitch,roll,heading,temp,bins
     global u1,u2,u3,u4
@@ -65,17 +73,23 @@ def read_PD0(infile):
     global ei1,ei2,ei3,ei4
     global pg1,pg2,pg3,pg4
     print('Reading PDO file : '+infile)
+    
+    ##### Open file and read in binary
     f=open(infile,'rb')
     dat = f.read()
     f.close()
-
+    
+    ##### Not sure what is happening here, is this looking for how many lines there are? Is 0x7f indictative of an end of line?
     for [ind,tmp1] in enumerate(dat):
-          if hex(dat[ind])=='0x7f' and hex(dat[ind+1]) =='0x7f':
-                 
+          if hex(dat[ind])=='0x7f' and hex(dat[ind+1]) =='0x7f':                 
                   break
+    
+    ##### Number of bytes per line?           
     nbytes=struct.unpack("h",dat[ind+2:ind+4])[0]+2
 #    print('Finding Ensembles')      
 
+
+##### Does this find the number of ensembles? If so, what exactly is happening?
     Iens=[]
     nind=0
     n=0
@@ -99,8 +113,12 @@ def read_PD0(infile):
                        Iens.append(ind)
  #             else:
  #                print('Bad Checksum')
-#                         
-    nens=len(Iens) 
+#
+
+    nens=len(Iens)
+
+##### By now, I know nens is number of ensembles, so this chunk is preallocating variables that will be read in. Is the 100 for the 2-dimensional variables just a "safe" number of bins without knowing exactly how many?
+
     time=np.empty((nens),np.double)    
     depth=np.empty((nens),np.double) 
     pitch=np.empty((nens),np.double) 
@@ -130,9 +148,13 @@ def read_PD0(infile):
     xformR=np.zeros((3,3),np.double)
     xformP=np.zeros((3,3),np.double)
     xformH=np.zeros((3,3),np.double)
+
     ind=0
     eoffset=0
 #    Iens=Iens[0:nens]
+
+##### Loop through ensembles and pull out data. Which bytes correspiond to what variables is detailed in the Pathfinder manual. This is standard for PD0s?
+
     for ind2 in Iens:
         startens=(ind2)
         tdat=dat[startens:startens+nbytes]
@@ -141,6 +163,7 @@ def read_PD0(infile):
         # a=buffer(tdat,nbytes-2,2)
         chksum=struct.unpack("<H",tdat[nbytes-2:nbytes])[0]
 
+        ##### What is this if statement?
         if (sum(tdat[:nbytes-2]) & 65535) ==  chksum:
               ndtype=struct.unpack("b",tdat[5:6])[0]
  
@@ -151,35 +174,38 @@ def read_PD0(infile):
                 
                        
 #             #FIXEDLEADER
+                ##### Number of beams
               Is=offsets[0]+8
               nbeam=tdat[Is]
-                
+                ##### Number of cells
               Is=offsets[0]+9
               ncells=tdat[Is]  
-
+                ##### Cell size
               Is=offsets[0]+12
               cellsize=struct.unpack("H",tdat[Is:Is+2])[0]        
               cellsize=cellsize/100.0       
-
+                ##### Bin 1 distance in meters?
               Is=offsets[0]+32
               bin1=struct.unpack("H",tdat[Is:Is+2])[0]    
               bin1=bin1/100.0
-              
+                ##### Heading alignment in degrees?
               Is=offsets[0]+26
               hdalign=struct.unpack("H",tdat[Is:Is+2])[0]    
               hdalign=hdalign/100.0
-              
+                ##### Heading bias in degrees?
               Is=offsets[0]+28
               hdbias=struct.unpack("H",tdat[Is:Is+2])[0]    
               hdbias=hdbias/100.0
              
+            
               Is=offsets[0]+4
               # sysconfig1=bin(tdat[Is])   
               sysconfig1=format(tdat[Is], '#010b')[2:]
-              
               Is=offsets[0]+5
               # sysconfig2=bin(tdat[Is]) 
               sysconfig2=format(tdat[Is], '#010b')[2:]
+            
+                ##### What is this? Depending on the value of sysconfig2, apply a different magnetic(?) correction to the transformation matrix?
               if sysconfig2[-2:]=='10':
                   bmang=30.0
               elif sysconfig2[-2:]=='01':
@@ -190,6 +216,7 @@ def read_PD0(infile):
               b=1.0/(4.0*np.cos(bmang*np.pi/180.0))
               c=1.0
               d=a/np.sqrt(2.0)
+                ##### Building transformation matrix?
               xform[0,0]=c*a  
               xform[0,1]=-c*a
               xform[0,2]=0.0
@@ -215,7 +242,7 @@ def read_PD0(infile):
               
               
      
-        
+                ##### Read in time data
               Is=offsets[1]+4
               year=tdat[Is]  
         
@@ -233,77 +260,100 @@ def read_PD0(infile):
               hsec=tdat[Is]
 
               ttime = datetime.datetime(year+2000,month,day,hour,minute,sec,hsec*10)-rtime
-
+                ##### Read in depth data
               Is=offsets[1]+16
-              tdepth=struct.unpack("H",tdat[Is:Is+2])[0]        
-              tdepth=tdepth*0.1   
+              tdepth=struct.unpack("H",tdat[Is:Is+2])[0]   
+                ##### Because in decimeters?
+              tdepth=tdepth*0.1
+                ##### Read in heading (t means transposed?)
               Is=offsets[1]+18
-              theading=struct.unpack("H",tdat[Is:Is+2])[0]        
-              theading=theading/100.0    
+              theading=struct.unpack("H",tdat[Is:Is+2])[0]     
+                ##### Why divide by 100 for these?
+              theading=theading/100.0
+                ##### Read in pitch data
               Is=offsets[1]+20
               tpitch=struct.unpack("h",tdat[Is:Is+2])[0]        
-              tpitch=tpitch/100.0    
+              tpitch=tpitch/100.0 
+                ##### Read in roll data
               Is=offsets[1]+22
               troll=struct.unpack("h",tdat[Is:Is+2])[0]        
               troll=troll/100.0    
-            
+                ##### Read in salinity data
               Is=offsets[1]+24
-              tsalt=struct.unpack("h",tdat[Is:Is+2])[0]        
-        
-            
-            
+              tsalt=struct.unpack("h",tdat[Is:Is+2])[0]
+                ##### Read in temperature data
               Is=offsets[1]+26
               ttemp=struct.unpack("h",tdat[Is:Is+2])[0]        
               ttemp=ttemp/100.0       
-            
+                ##### Read in pressure data, is this different from tdepth?
               Is=offsets[1]+48
               tpress=struct.unpack("i",tdat[Is:Is+4])[0]        
               tpress=tpress/1000.0       
             
-            
-#             #velocity data 
+                ##### Read in velocity data
               Is=offsets[2]+2
               fmt = "<%dh" % (ncells*4)
               uvw=struct.unpack(fmt,tdat[Is:Is+ncells*4*2])
-              uvw=np.array(uvw)
+              uvw=np.array(uvw,dtype=float)
 
-#             #EI data 
-
+                ##### Read in echo intensity data
               Is=offsets[3]+2
               fmt = "<%dB" % (ncells*4)
               tEI=struct.unpack(fmt,tdat[Is:Is+ncells*4])
               tEI=np.array(tEI)
-        
 
-#             #C data 
+                ##### Read in correlation data
               Is=offsets[4]+2
               fmt = "<%dB" % (ncells*4)
               tC=struct.unpack(fmt,tdat[Is:Is+ncells*4])
               tC=np.array(tC)
               
-              #ADDDED 02/11/2020
-#             #PG data 
+                ##### Read in percent good data
               Is=offsets[5]+2
               fmt = "<%dB" % (ncells*4)
               tPG=struct.unpack(fmt,tdat[Is:Is+ncells*4])
               tPG=np.array(tPG)
               
-              
-              
-              
-              
-              
-            
+                ##### Reshape velocity, ei, corr, and pg to be 2D based on cells and beams?
               uvw.shape=(ncells,4)
               tEI.shape=(ncells,4)
               tC.shape=(ncells,4)
-              tPG.shape=(ncells,4)#ADDED 02/11/2020
-             
+              tPG.shape=(ncells,4)
+                ##### Create bins variable based on number of cells and cell size and reference it to distance from sensor based on bin1
               bins=(np.arange(0,ncells,1,np.double)*cellsize)+bin1  
-          
+              
+                ##### Read in bottom track data
+              Is=offsets[6]
+              tmp1=struct.unpack("c",tdat[Is:Is+1])[0]
+              Is=offsets[6]+1
+              tmp2=struct.unpack("c",tdat[Is:Is+1])[0]
+              if [tmp1+tmp2]==[b'\x00\x06']:
+                  Is=offsets[6]+16
+                  tr1=struct.unpack("H",tdat[Is:Is+2])[0]       
+                  Is=offsets[6]+18
+                  tr2=struct.unpack("H",tdat[Is:Is+2])[0]    
+                  Is=offsets[6]+20
+                  tr3=struct.unpack("H",tdat[Is:Is+2])[0]    
+                  Is=offsets[6]+22
+                  tr4=struct.unpack("H",tdat[Is:Is+2])[0]     
+                ##### Convert bottom track range to meters?
+                  tr1=tr1/100.0     
+                  tr2=tr2/100.0     
+                  tr3=tr3/100.0     
+                  tr4=tr4/100.0
+                ##### Only set velocity data below detected bottom equal to 0 if the bottom track range is greater than 0?
+                  if tr1>0:
+                      uvw[bins>.85*tr1,0]=float("NAN")
+                  if tr2>0:
+                      uvw[bins>.85*tr2,1]=float("NAN")
+                  if tr3>0:
+                      uvw[bins>.85*tr3,2]=float("NAN")
+                  if tr4>0:
+                      uvw[bins>.85*tr4,3]=float("NAN")
+              
+                ##### Bin map velocity data based on pitch and roll
               uvw=mapdepthcells(uvw,tpitch,troll)
-            
-             
+                ##### What is ind here? The last instance of this I see it is set to 0
               time[ind]=ttime.days+ttime.seconds/86400.0
                   
               depth[ind]=tdepth
@@ -313,7 +363,11 @@ def read_PD0(infile):
               heading[ind]=theading
               
   #            P=np.arctan(np.tan(tpitch*np.pi/180.0)*np.cos(troll*np.pi/180.0))
+
+                ##### Correct heading
               shead=theading+hdalign
+        
+                ##### Build beam to ENU transformation matrix
               CH=np.cos(shead*np.pi/180.0)
               SH=np.sin(shead*np.pi/180.0)
               CR=np.cos(troll*np.pi/180.0)
@@ -356,7 +410,7 @@ def read_PD0(infile):
               xformP[2,2]=CP
          
          
-              
+                ##### Convert from beam to ENU velocity
               uvw=uvw @ xform.transpose()
               terr=uvw[:,3]
               tuvw=uvw[:,0:3]
@@ -368,12 +422,13 @@ def read_PD0(infile):
               # u2[ind,0:ncells]=uvw[:,1]
               # u3[ind,0:ncells]=uvw[:,2]
               # u4[ind,0:ncells]=uvw[:,3]
-              u1[ind,0:ncells]=tuvw[:,0]
-              u2[ind,0:ncells]=tuvw[:,1]
-              u3[ind,0:ncells]=tuvw[:,2]
-              u4[ind,0:ncells]=terr
-        
-              ei1[ind,0:ncells]=tEI[:,0]
+              u1[ind,0:ncells]=tuvw[:,0] ##### This is now U velocity
+              u2[ind,0:ncells]=tuvw[:,1] ##### This is now V velocity
+              u3[ind,0:ncells]=tuvw[:,2] ##### This is now W velocity
+              u4[ind,0:ncells]=terr      ##### This is now error velocity?
+            
+                ##### Does ei, corr, and pg stay in the beam reference frame? I think that makes sense but I also think that I need to perform some of the QAQC like filtering out low ei, corr, and pg PRIOR to doing beam to ENU....
+              ei1[ind,0:ncells]=tEI[:,0] 
               ei2[ind,0:ncells]=tEI[:,1]
               ei3[ind,0:ncells]=tEI[:,2]
               ei4[ind,0:ncells]=tEI[:,3]
@@ -388,8 +443,6 @@ def read_PD0(infile):
               pg2[ind,0:ncells]=tPG[:,1]
               pg3[ind,0:ncells]=tPG[:,2]
               pg4[ind,0:ncells]=tPG[:,3]
-              
-              
               
               
               ind=ind+1
@@ -416,7 +469,6 @@ def read_PD0(infile):
     pg2=pg2[:,0:ncells]
     pg3=pg3[:,0:ncells]
     pg4=pg4[:,0:ncells]
-    
 
 
 def mapdepthcells(uvw,tpitch,troll):
@@ -426,6 +478,7 @@ def mapdepthcells(uvw,tpitch,troll):
     tuvw=uvw*np.nan
     az=90*np.pi/180
     elev=-60*np.pi/180
+    ##### Beam to XYZ here?
     XYZ1 = sph2cart(az,elev,brange)
     
    
@@ -453,7 +506,7 @@ def mapdepthcells(uvw,tpitch,troll):
     rmx2 = R.from_rotvec(ax2)
     
     rot1=rmx1.as_matrix()    
-    rot2=rmx2.as_matrix()  
+    rot2=rmx2.as_matrix()
     rXYZ1=np.concatenate(([XYZ1[0]],[XYZ1[1]],[XYZ1[2]]),axis=0)
     r1=rXYZ1.transpose() @ rot1 @ rot2
     rXYZ2=np.concatenate(([XYZ2[0]],[XYZ2[1]],[XYZ2[2]]),axis=0)
@@ -528,13 +581,11 @@ def mapdepthcells(uvw,tpitch,troll):
     # input()
     return tuvw
 
-def qaqc_data():
+def qaqc_data(u1,u2,u3,u4,c1,c2,c3,c4,ei1,ei2,ei3,ei4):
     print('PROCESSING DVL DATA')
-    global time,depth,pitch,roll,heading,temp,bins
-    global u1,u2,u3,u4
-    global c1,c2,c3,c4
-    global ei1,ei2,ei3,ei4
-    global pg1,pg2,pg3,pg4
+    corr_cut = 50
+    ei_cut   = 70
+    pg_cut   = 80
     
     # Change filled values to NaN
     u1[u1 == -32768] = float("NAN")
@@ -548,43 +599,27 @@ def qaqc_data():
     u3 = u3/1000
     u4 = u4/1000
     
+    u1[c1 < corr_cut] = float("NAN")
+    u2[c2 < corr_cut] = float("NAN")
+    u3[c3 < corr_cut] = float("NAN")
+    u4[c4 < corr_cut] = float("NAN")  
+
+    u1[ei1 < ei_cut] = float("NAN")
+    u2[ei2 < ei_cut] = float("NAN")
+    u3[ei3 < ei_cut] = float("NAN")
+    u4[ei4 < ei_cut] = float("NAN")
     
-    
-    # Remove beams with too low of a percent good value
-    # Firing and Gordon (1990) used 80%
-    # Fischer and Visbeck (1993) used 30%
-    # wat....
-    # pg_lim = 80
-    # pg1_low = pg1 < pg_lim
-    # pg2_low = pg2 < pg_lim
-    # pg3_low = pg3 < pg_lim
-    # pg4_low = pg4 < pg_lim
-    
-    # # Combine them all (adding matricies of T/F is nifty)
-    # # This ends up tossing more data than if we just remove
-    # # bad pg values per beam. Instead, toss data from all beams
-    # # if any register a bad pg value.
-    # pg_low = pg1_low + pg2_low + pg3_low + pg4_low
-    
-    # u1[pg_low] == float("NAN")
-    # u2[pg_low] == float("NAN")
-    # u3[pg_low] == float("NAN")
-    # u4[pg_low] == float("NAN")
-    
-    # # Not really sure what pitch/roll filters to use
-    high_pitch =  abs(pitch) > 30
-    low_pitch  = abs(pitch) < 20
-    pitch_ind  = low_pitch + high_pitch
-    
-    u1[pitch_ind] = float("NAN")
-    u2[pitch_ind] = float("NAN")
-    u3[pitch_ind] = float("NAN")
-    u4[pitch_ind] = float("NAN")
+    u1[pg1 < pg_cut] = float("NAN")
+    u2[pg2 < pg_cut] = float("NAN")
+    u3[pg3 < pg_cut] = float("NAN")
+    u4[pg4 < pg_cut] = float("NAN")  
 
                         
-def process_data(U,V,H,dz):
+def process_data(U,V,H,dz,u_daverage,v_daverage):
     global O_ls, G_ls, bin_new    
-    ## Written by jgradone@marine.rutgers.edu Feb-2021
+    
+    ## Feb-2021 jgradone@marine.rutgers.edu Initial
+    ## Jul-2021 jgradone@marine.rutgers.edu Updates for constraints
     
     ## Purpose: Take velocity measurements from glider mounted ADCP and compute
     # shear profiles
@@ -602,90 +637,87 @@ def process_data(U,V,H,dz):
     # U is measured east-west velocities from ADCP
     # V is measured north-south velocities from ADCP
     # Z is the measurement depths of U and V
-    # uv_daverage is depth averaged velocity (Not applicable for real-time)
+    # uv_daverage is depth averaged velocity (Set to 0 for real-time)
     
-    ##########################################################################
-            
+    ##########################################################################        
     # Take difference between bin lengths for bin size [m]
     bin_size = np.diff(bins)[0]
     bin_num = len(bins)
-    
+
     # This creates a grid of the ACTUAL depths of the ADCP bins by adding the
     # depths of the ADCP bins to the actual depth of the instrument
     [bdepth,bbins]=np.meshgrid(depth,bins)
     bin_depth = bdepth+bbins  
     Z = bin_depth
-    
+
     # Set knowns from Equations 19 from Visbeck (2002) page 800
     # Maximum number of observations (nd) is given by the number of velocity
     # estimates per ping (nbin) times the number of profiles per cast (nt)
     nbin = U.shape[0]  # number of programmed ADCP bins per individual profile
     nt   = U.shape[1]  # number of individual velocity profiles
     nd   = nbin*nt      # G dimension (1) 
-    
+
     # Define the edges of the bins
     bin_edges = np.arange(0,math.floor(np.max(bin_depth)),dz).tolist()
-    
+
     # Check that each bin has data in it
     bin_count = np.empty(len(bin_edges)-1) # Preallocate memory
     bin_count[:] = np.NaN
-    
+
     for k in np.arange(len(bin_edges))[:-1]:
         # Create index of depth values that fall inside the bin edges
         ii = np.where((bin_depth > bin_edges[k]) & (bin_depth < bin_edges[k+1]))
         bin_count[k] = len(bin_depth[ii])
         ii = []
-    
+
     # Create list of bin centers    
     bin_new = [x+dz/2 for x in bin_edges[:-1]]
-    
+
     # Chop off the top of profile if no data
     ind = np.argmax(bin_count > 0) # Stops at first index greater than 0
     bin_new = bin_new[ind:]        # Removes all bins above first with data
     z1 = bin_new[0]                # Depth of center of first bin with data
-    
+
     # Create and populate G
     nz = len(bin_new)  # number of ocean velocities desired in output profile
     nm = nz + nt       # G dimension (2), number of unknowns
     # Let's build the corresponding coefficient matrix G 
     G = np.zeros((nd,nm))
-    
+
     # Indexing of the G matrix was taken from Todd et al. 2012
     for ii in np.arange(nt):           # Number of ADCP profiles per cast
         for jj in np.arange(nbin):     # Number of measured bins per profile
-            
+
             # Uctd part of matrix
             G[(nbin*(ii-1))+jj,ii] = 1
-            
+
             # This will fill in the Uocean part of the matrix. It loops through
             # all Z members and places them in the proper location in the G matrix
-            
+
             # Find the difference between all bin centers and the current Z value        
             dx = abs(bin_new-Z[ii,jj])
-            
+
             # Find the minimum of these differences
             minx = np.nanmin(dx)
-            
+
             # Finds bin_new index of the first match of Z and bin_new    
             idx = np.argmin(dx-minx)
-            
+
             G[(nbin*(ii-1))+jj,nt+idx] = 1
             del dx, minx, idx
-        
-    
+
+
     # Reshape U and V into the format of the d column vector
-    
-    d_u = U.transpose()
+    d_u = np.flip(U.transpose(),axis=0)
     d_u = d_u.flatten()
-    
-    d_v = V.transpose()
+    d_v = np.flip(V.transpose(),axis=0)
     d_v = d_v.flatten()
-    
-    
+
+
     ##########################################################################
     ## This chunk of code containts the constraints for depth averaged currents
     ## which we likely won't be using for the real-time processing
-    
+
     # Need to calculate C (Todd et al. 2017) based on our inputs 
     # This creates a row that has the same # of columns as G. The elements
     # of the row follow the trapezoid rule which is used because of the
@@ -693,105 +725,114 @@ def process_data(U,V,H,dz):
     # the row corresponds to the max depth reached by the glider, any bins
     # below that should have already been removed.
 
-    #constraint = np.concatenate(([np.zeros(nt)], [z1/2], [z1/2+dz/2], [[dz]*(nz-3)], [dz/2]), axis=None)
-    
+    constraint = np.concatenate(([np.zeros(nt)], [z1/2], [z1/2+dz/2], [[dz]*(nz-3)], [dz/2]), axis=None)
+
     # To find C, we use the equation of the norm and set norm=1 because we
     # desire unity. The equation requires we take the sum of the squares of the
     # entries in constraint.
-    
-    #sqr_constraint = constraint*constraint
-    #sum_sqr_constraint = np.sum(sqr_constraint)
-    
+
+    sqr_constraint = constraint*constraint
+    sum_sqr_constraint = np.sum(sqr_constraint)
+
     # Then we can solve for the value of C needed to maintain unity 
-    
-    #C = H*(1/np.sqrt(sum_sqr_constraint))
-    
+
+    C = H*(1/np.sqrt(sum_sqr_constraint))
+
     # This is where you would add the constraint for the depth averaged
     # velocity from Todd et al., (2011/2017)
-    
-    # These are the lines in MATLAB, the du would replace d_u from here on out
-    ###du = [d_u; C*uv_daverage(1)]; 
-    ###dv = [d_v; C*uv_daverage(2)];
-    
+
+    # OG
+    du = np.concatenate(([d_u],[C*u_daverage]), axis=None)
+    dv = np.concatenate(([d_v],[C*v_daverage]), axis=None)
+
     # Build Gstar
     # Keep this out because not using depth averaged currents
-    #Gstar = np.vstack((G, (C/H)*constraint))
-    
+    Gstar = np.vstack((G, (C/H)*constraint))
+
     ##########################################################################
-    
+
     # Build the d matrix
-    d = list(map(complex,d_u, d_v))
-    
+    d = list(map(complex,du, dv))
+
     ##### Inversion!
-    
     ## If want to do with a sparse matrix sol'n, look at scipy
     #Gs = scipy.sparse(Gstar)
+    Gs = Gstar
 
-    Gs = G
-    
     ms = np.linalg.solve(np.dot(Gs.conj().transpose(),Gs),Gs.conj().transpose())
-    
+
     ## This is a little clunky but I think the dot product fails because of
     ## NaN's in the d vector. So, this code will replace NaN's with 0's just
     ## for that calculation    
     sol = np.dot(ms,np.where(np.isnan(d),0,d))
-        
+
     O_ls = sol[nt:]   # Ocean velocity
     G_ls = sol[0:nt]  # Glider velocity
-        
-    
-    
-    
-    
-    
 
-        
+
+
+    
     
     
     
     
 def write_data(infile):
-    global O_ls, G_ls, bin_new   
-    basefile=os.path.basename(infile)
+    global O_ls, G_ls, bin_new,time
+    basefile=os.path.basename(infile).upper()
     ncfile=odir+basefile.replace('PD0','nc')
     print('Writing profile DATA : '+ncfile)
-        
     ncfile = netCDF4.Dataset(ncfile, 'w', format='NETCDF4')
     ncfile.Conventions= "CF-1.6"
 #    
 #    
-#     ncfile.createDimension('time', None)
-#     ncfile.createDimension('depth', )
-#     ncfile.createVariable('time','f8',('time',))
+    ncfile.createDimension('time', 1)
+    ncfile.createDimension('depth', len(bin_new))
+    ncfile.createVariable('time','f8',('time'))
+    ncfile.createVariable('timemax','f8',('time'))
+    ncfile.createVariable('timemin','f8',('time'))
+    ncfile.createVariable('depth','f8',('depth'))
     
-#     ncfile.createVariable('u','f8',('time','depth'))
-#     ncfile.createVariable('v','f8',('time','depth'))
-    
+    ncfile.createVariable('u','f8',('time','depth'))
+    ncfile.createVariable('v','f8',('time','depth'))
+    print(np.mean(time))
     
 # #        
 
-#     ncfile.variables['time'][:]=time
-#     ncfile.variables['time'].units='days since 2020-01-01 00:00:00'
-#     ncfile.variables['time'].long_name='time'
-#     ncfile.variables['time'].standard_name='time'
+    ncfile.variables['time'][:]=np.mean(time)
+    ncfile.variables['time'].units='days since 2020-01-01 00:00:00'
+    ncfile.variables['time'].long_name='time'
+    ncfile.variables['time'].standard_name='time'
+
+
+    ncfile.variables['timemax'][:]=np.max(time)
+    ncfile.variables['timemax'].units='days since 2020-01-01 00:00:00'
+    ncfile.variables['timemax'].long_name='maximum time'
+    ncfile.variables['timemax'].standard_name='timemax'
+
+
+    ncfile.variables['timemin'][:]=np.min(time)
+    ncfile.variables['timemin'].units='days since 2020-01-01 00:00:00'
+    ncfile.variables['timemin'].long_name='minimum time'
+    ncfile.variables['timemin'].standard_name='timemin'
 
     
 # #    
-#     ncfile.variables['depth'][:]=bins_new
-#     ncfile.variables['depth'].units='m'
-#     ncfile.variables['depth'].long_name='Cell Depth'
-#     ncfile.variables['depth'].standard_name='depth'
-# #    
+    ncfile.variables['depth'][:]=bin_new
+    ncfile.variables['depth'].units='m'
+    ncfile.variables['depth'].long_name='Cell Depth'
+    ncfile.variables['depth'].standard_name='depth'
+#        plt.plot(np.real(O_ls),bin_new,label='u - velocity')
+#    plt.plot(np.imag(O_ls),bin_new,label='v - velocity')
 
-#     ncfile.variables['u'][:]=u/1000.0
-#     ncfile.variables['u'].units='m s-1'
-#     ncfile.variables['u'].long_name='eastward water velocity'
-#     ncfile.variables['u'].standard_name='eastward_sea_water_velocity'
+    ncfile.variables['u'][:]=np.real(O_ls)
+    ncfile.variables['u'].units='m s-1'
+    ncfile.variables['u'].long_name='eastward water velocity'
+    ncfile.variables['u'].standard_name='eastward_sea_water_velocity'
 
-#     ncfile.variables['v'][:]=v/1000.0
-#     ncfile.variables['v'].units='m s-1'
-#     ncfile.variables['v'].long_name='northward water velocity'
-#     ncfile.variables['v'].standard_name='northward_sea_water_velocity'
+    ncfile.variables['v'][:]=np.imag(O_ls)
+    ncfile.variables['v'].units='m s-1'
+    ncfile.variables['v'].long_name='northward water velocity'
+    ncfile.variables['v'].standard_name='northward_sea_water_velocity'
 
     # ncfile.variables['w'][:]=w/1000.0
     # ncfile.variables['w'].units='m s-1'
@@ -834,12 +875,12 @@ def sph2cart(az,elev,r):
 
 def plot_data():
     print('Plotting DVL DATA')       
-    print(bins)
-    plt.figure(1)
-    plt.clf()
-    plt.plot(time,-depth,'r')
-    plt.ylabel('Depth [m]')
-    plt.grid(True)
+    # print(bins)
+    # plt.figure(1)
+    # plt.clf()
+    # plt.plot(time,-depth,'r')
+    # plt.ylabel('Depth [m]')
+    # plt.grid(True)
     
     plt.figure(2)
     plt.clf()
@@ -863,73 +904,105 @@ def plot_data():
 
     by=bdepth+bbins
     
-    fig2=plt.figure(4)
+
+    
+    
+    
+    fig3=plt.figure(5)
     plt.clf()
     
     ax1=plt.subplot(411)
-    pc2=plt.pcolormesh(x,-by,u1.transpose(),cmap=cmap,vmin=-30,vmax=30)
-    plt.plot(time,-depth,'k')
-    fig2.colorbar(pc2,ax=ax1)
+    pc2=plt.pcolormesh(time,-bins,u1.transpose(),cmap=cmap,vmin=-1,vmax=1)
+    #plt.plot(time,-depth,'k')
+    fig3.colorbar(pc2,ax=ax1)
 
     ax1=plt.subplot(412)
-    pc2=plt.pcolormesh(x,-by,u2.transpose(),cmap=cmap,vmin=-30,vmax=30)
-    plt.plot(time,-depth,'k')
-    fig2.colorbar(pc2,ax=ax1)
+    pc2=plt.pcolormesh(time,-bins,u2.transpose(),cmap=cmap,vmin=-1,vmax=1)
+    #plt.plot(time,-depth,'k')
+    fig3.colorbar(pc2,ax=ax1)
     
     ax1=plt.subplot(413)
-    pc2=plt.pcolormesh(x,-by,u3.transpose(),cmap=cmap,vmin=-30,vmax=30)
-    plt.plot(time,-depth,'k')
-    fig2.colorbar(pc2,ax=ax1)
+    pc2=plt.pcolormesh(time,-bins,u3.transpose(),cmap=cmap,vmin=-1,vmax=1)
+    #plt.plot(time,-depth,'k')
+    fig3.colorbar(pc2,ax=ax1)
     
     ax1=plt.subplot(414)
-    pc2=plt.pcolormesh(x,-by,u4.transpose(),cmap=cmap,vmin=-30,vmax=30)
-    plt.plot(time,-depth,'k')
-    fig2.colorbar(pc2,ax=ax1)
-    
-    
-    
-    # fig3=plt.figure(5)
-    # plt.clf()
-    
-    # ax1=plt.subplot(411)
-    # pc2=plt.pcolormesh(time,-bins,u1.transpose(),cmap=cmap,vmin=-1,vmax=1)
-    # #plt.plot(time,-depth,'k')
-    # fig3.colorbar(pc2,ax=ax1)
+    pc2=plt.pcolormesh(time,-bins,u4.transpose(),cmap=cmap,vmin=-1,vmax=1)
+    #plt.plot(time,-depth,'k')
+    fig3.colorbar(pc2,ax=ax1)
 
-    # ax1=plt.subplot(412)
-    # pc2=plt.pcolormesh(time,-bins,u2.transpose(),cmap=cmap,vmin=-1,vmax=1)
-    # #plt.plot(time,-depth,'k')
-    # fig3.colorbar(pc2,ax=ax1)
-    
-    # ax1=plt.subplot(413)
-    # pc2=plt.pcolormesh(time,-bins,u3.transpose(),cmap=cmap,vmin=-1,vmax=1)
-    # #plt.plot(time,-depth,'k')
-    # fig3.colorbar(pc2,ax=ax1)
-    
-    # ax1=plt.subplot(414)
-    # pc2=plt.pcolormesh(time,-bins,u4.transpose(),cmap=cmap,vmin=-1,vmax=1)
-    # #plt.plot(time,-depth,'k')
-    # fig3.colorbar(pc2,ax=ax1)
-    # plt.show()
-    
+
+    fig4=plt.figure(6)
+    plt.clf()
+    ax1=plt.subplot(411)
+    pc2=plt.pcolormesh(time,-bins,c1.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+
+    ax1=plt.subplot(412)
+    pc2=plt.pcolormesh(time,-bins,c2.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+   
+    ax1=plt.subplot(413)
+    pc2=plt.pcolormesh(time,-bins,c3.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+   
+    ax1=plt.subplot(414)
+    pc2=plt.pcolormesh(time,-bins,c4.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
     ## A few test plots
-    plt.figure(6)
+    
+    
+
+    fig4=plt.figure(7)
+    plt.clf()
+    ax1=plt.subplot(411)
+    pc2=plt.pcolormesh(time,-bins,ei1.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+
+    ax1=plt.subplot(412)
+    pc2=plt.pcolormesh(time,-bins,ei2.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+   
+    ax1=plt.subplot(413)
+    pc2=plt.pcolormesh(time,-bins,ei3.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+   
+    ax1=plt.subplot(414)
+    pc2=plt.pcolormesh(time,-bins,ei4.transpose(),cmap=cmap,vmin=0,vmax=80)
+    #plt.plot(time,-depth,'k')
+    fig4.colorbar(pc2,ax=ax1)
+    ## A few test plots
+    
+    
+    plt.figure(8)
     plt.plot(np.real(O_ls),bin_new,label='u - velocity')
     plt.plot(np.imag(O_ls),bin_new,label='v - velocity')
-    plt.ylim(30,0)
+    plt.ylim(300,0)
     plt.legend()
+    # plt.figure(9)
+    # plt.plot(np.real(G_ls),bin_new,label='u - velocity')
+    # plt.plot(np.imag(G_ls),bin_new,label='v - velocity')
+    # plt.ylim(30,0)
+    # plt.legend()
   
-    # Just give me one profile
-    fig3 = plt.figure(7)
-    pc3 = plt.pcolormesh(x,-by,u1.transpose(),cmap=cmap,vmin=-1,vmax=1)
-    plt.plot(time,-depth,'k')
-    plt.title('20 < abs(Pitch) < 30')    
-    fig3.colorbar(pc3)
+    # # Just give me one profile
+    # fig3 = plt.figure(7)
+    # pc3 = plt.pcolormesh(x,-by,u1.transpose(),cmap=cmap,vmin=-1,vmax=1)
+    # plt.plot(time,-depth,'k')
+    # plt.title('20 < abs(Pitch) < 30')    
+    # fig3.colorbar(pc3)
     
-    dp = np.diff(pitch)
-    plt.figure(8)
-    plt.plot(dp[1:200])
-    plt.axhline(y=-5)
+    # dp = np.diff(pitch)
+    # plt.figure(8)
+    # plt.plot(dp[1:200])
+    # plt.axhline(y=-5)
     
 #def bin(s):
 #    return str(s) if s<=1 else bin(s>>1) + str(s&1)
@@ -942,51 +1015,4 @@ if __name__ == "__main__":
     main(sys.argv)
     print('FINISHED')
     
-
-    
-
-# ## Some test plots    
-
-# cmap = plt.get_cmap('bwr')
-# [x,y]=np.meshgrid(time,bins)
-# [bdepth,bbins]=np.meshgrid(depth,bins)
-
-# by=bdepth+bbins
-
-
-
-# ## Weird that U velocity is pos during downcast and neg during upcast
-# fig99=plt.figure(99)
-# #plt.figure(figsize=(14,8))
-# pc99=plt.pcolormesh(x,-by,u1.transpose(),cmap=cmap,vmin=-1,vmax=1)
-# plt.plot(time,-depth,'k')
-# #plt.ylim(-22,0)
-# fig99.colorbar(pc99)
-
-
-
-
-
-
-# fig98=plt.figure(98)
-# #plt.figure(figsize=(14,8))
-# pc98=plt.pcolormesh(x,-by,u2.transpose(),cmap=cmap,vmin=-1,vmax=1)
-# plt.plot(time,-depth,'k')
-# #plt.ylim(-22,0)
-# fig98.colorbar(pc98)
-
-
-
-
-
-
-# ## Weird that W velocity is up during downcast and down during upcast
-# fig97=plt.figure(97)
-# #plt.figure(figsize=(14,8))
-# pc97=plt.pcolormesh(x,-by,u3.transpose(),cmap=cmap,vmin=-1,vmax=1)
-# plt.plot(time,-depth,'k')
-# #plt.ylim(-22,0)
-# fig97.colorbar(pc97)
-
-
 
