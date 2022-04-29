@@ -324,6 +324,14 @@ def read_PD0(infile):
               bins=(np.arange(0,ncells,1,np.double)*cellsize)+bin1    
             ## Read in bottom track data
               LO=len(offsets)
+            
+            ## When the ADCP writes the PD0, each ensemble (output profile) has a set of data types. i.e. fixed leader,
+            ## variable leader, velocity, correltation, etc. Each data type has it's own header with an identifier.
+            ## When we read a PD0 file, we read each ensemble one at a time.  (variable tdat in the script).
+            ## Early in the ensemble, there is a variable called offsets, giving us the byte offset from the beginning
+            ## of the  ensemble to the start of the data types in the file. If there is no bottom track, one of these
+            ## offsets will be missing. So of LO>6, then there is bottom track  data to process. 
+
               if LO>6:
                   Is=offsets[6]
                   tmp1=struct.unpack("c",tdat[Is:Is+1])[0]
@@ -994,7 +1002,7 @@ def plot_data():
     plt.figure(8)
     plt.plot(np.real(O_ls),bin_new,label='u - velocity')
     plt.plot(np.imag(O_ls),bin_new,label='v - velocity')
-    plt.ylim(300,0)
+    plt.ylim(1000,0)
     plt.legend()
     # plt.figure(9)
     # plt.plot(np.real(G_ls),bin_new,label='u - velocity')
