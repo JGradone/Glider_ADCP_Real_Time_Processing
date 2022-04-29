@@ -18,8 +18,8 @@ rtime=datetime.datetime(2020,1,1,0,0,0)
 odir='./'
 #idir = 'C:\\work\\glideradcp\\data\\ru33_2020_11_20_dvl\\pd0\\'
 #idir ='/home/hunter/Projects/glider/glideradcp/ru33_2020_11_20_dvl/pd0/'
-#idir='/home/hunter/Projects/glider/Glider_ADCP_Real_Time_Processing/'
-idir = 'C:\\work\\glideradcp\\stthomas\\'
+idir='/Users/joegradone/Desktop/'
+#idir = 'C:\\work\\glideradcp\\stthomas\\'
 
 ## Initializes empty variables, but for more that just the PD0 output
 time=[]    
@@ -52,13 +52,13 @@ plt.ion()
 
 ## Main function to run through entire processing workflow
 def main(argv):
-    files=glob.glob(idir+'*.PD0')
+    files=glob.glob(idir+'*.pd0')
     files.sort(key=os.path.getmtime)
-    files=files[-3:]#Gets the last files. 
+    files=files[-3:] #Gets the last files. 
     
     for file in files:
         read_PD0(file)
-        process_data(U=u1,V=u2,H=35,dz=1,u_daverage=0,v_daverage=0)
+        process_data(U=u1,V=u2,H=1000,dz=10,u_daverage=0,v_daverage=0)
         write_data(file)  
         plot_data()
         plt.show()
@@ -316,6 +316,10 @@ def read_PD0(infile):
               tEI.shape=(ncells,4)
               tC.shape=(ncells,4)
               tPG.shape=(ncells,4)
+              
+              ## QAQC Data
+              uvw = qaqc_data(uvw, tEI, tC, tPG)              
+              
             ## Create bins variable based on number of cells and cell size and reference it to distance from sensor based on bin1
               bins=(np.arange(0,ncells,1,np.double)*cellsize)+bin1    
             ## Read in bottom track data
@@ -407,9 +411,6 @@ def read_PD0(infile):
               xformP[2,1]=SP
               xformP[2,2]=CP
               
-            ## QAQC Data
-              u1, u2, u3, u4 = qaqc_data(u1,u2,u3,u4,c1,c2,c3,c4,ei1,ei2,ei3,ei4)
-            
             ## Convert from beam to ENU velocity
               uvw=uvw @ xform.transpose()
               terr=uvw[:,3]
@@ -577,40 +578,51 @@ def mapdepthcells(uvw,tpitch,troll):
     # input()
     return tuvw
 
-def qaqc_data(u1,u2,u3,u4,c1,c2,c3,c4,ei1,ei2,ei3,ei4):
+def qaqc_data(uvw, tEI, tC, tPG):
     #print('PROCESSING DVL DATA')
     corr_cut = 50
     ei_cut   = 70
     pg_cut   = 80
     
+        
     # Change filled values to NaN
-    u1[u1 == -32768] = float("NAN")
-    u2[u2 == -32768] = float("NAN")
-    u3[u3 == -32768] = float("NAN")
-    u4[u4 == -32768] = float("NAN")
+    uvw[uvw == -32768] = float("NAN")
     
     # Convert from mm/s to m/s
-    u1 = u1/1000
-    u2 = u2/1000
-    u3 = u3/1000
-    u4 = u4/1000
-    
-    u1[c1 < corr_cut] = float("NAN")
-    u2[c2 < corr_cut] = float("NAN")
-    u3[c3 < corr_cut] = float("NAN")
-    u4[c4 < corr_cut] = float("NAN")  
+    uvw = uvw/1000
 
-    u1[ei1 < ei_cut] = float("NAN")
-    u2[ei2 < ei_cut] = float("NAN")
-    u3[ei3 < ei_cut] = float("NAN")
-    u4[ei4 < ei_cut] = float("NAN")
+    uvw[:,0][tC[:,0] < corr_cut] = float("NAN")
+    uvw[:,1][tC[:,1] < corr_cut] = float("NAN")
+    uvw[:,2][tC[:,2] < corr_cut] = float("NAN")
+    uvw[:,3][tC[:,3] < corr_cut] = float("NAN")
+
+    uvw[:,0][tEI[:,0] < ei_cut] = float("NAN")
+    uvw[:,1][tEI[:,1] < ei_cut] = float("NAN")
+    uvw[:,2][tEI[:,2] < ei_cut] = float("NAN")
+    uvw[:,3][tEI[:,3] < ei_cut] = float("NAN")
     
-    u1[pg1 < pg_cut] = float("NAN")
-    u2[pg2 < pg_cut] = float("NAN")
-    u3[pg3 < pg_cut] = float("NAN")
-    u4[pg4 < pg_cut] = float("NAN")  
+    uvw[:,0][tPG[:,0] < pg_cut] = float("NAN")
+    uvw[:,1][tPG[:,1] < pg_cut] = float("NAN")
+    uvw[:,2][tPG[:,2] < pg_cut] = float("NAN")
+    uvw[:,3][tPG[:,3] < pg_cut] = float("NAN")
+
+
+    # u1[c1 < corr_cut] = float("NAN")
+    # u2[c2 < corr_cut] = float("NAN")
+    # u3[c3 < corr_cut] = float("NAN")
+    # u4[c4 < corr_cut] = float("NAN")  
+
+    # u1[ei1 < ei_cut] = float("NAN")
+    # u2[ei2 < ei_cut] = float("NAN")
+    # u3[ei3 < ei_cut] = float("NAN")
+    # u4[ei4 < ei_cut] = float("NAN")
     
-    return(u1,u2,u3,u4)
+    # u1[pg1 < pg_cut] = float("NAN")
+    # u2[pg2 < pg_cut] = float("NAN")
+    # u3[pg3 < pg_cut] = float("NAN")
+    # u4[pg4 < pg_cut] = float("NAN")  
+    
+    return(uvw)
 
                         
 def process_data(U,V,H,dz,u_daverage,v_daverage):
