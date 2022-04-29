@@ -319,34 +319,36 @@ def read_PD0(infile):
             ## Create bins variable based on number of cells and cell size and reference it to distance from sensor based on bin1
               bins=(np.arange(0,ncells,1,np.double)*cellsize)+bin1    
             ## Read in bottom track data
-              Is=offsets[6]
-              tmp1=struct.unpack("c",tdat[Is:Is+1])[0]
-              Is=offsets[6]+1
-              tmp2=struct.unpack("c",tdat[Is:Is+1])[0]
-              if [tmp1+tmp2]==[b'\x00\x06']:
-                  Is=offsets[6]+16
-                  tr1=struct.unpack("H",tdat[Is:Is+2])[0]       
-                  Is=offsets[6]+18
-                  tr2=struct.unpack("H",tdat[Is:Is+2])[0]    
-                  Is=offsets[6]+20
-                  tr3=struct.unpack("H",tdat[Is:Is+2])[0]    
-                  Is=offsets[6]+22
-                  tr4=struct.unpack("H",tdat[Is:Is+2])[0]     
-            ## Convert bottom track range to meters
-                  tr1=tr1/100.0     
-                  tr2=tr2/100.0     
-                  tr3=tr3/100.0     
-                  tr4=tr4/100.0
-            ## Only set velocity data below detected bottom equal to 0 if the bottom track range is greater than 0
-                  if tr1>0:
-                      uvw[bins>.85*tr1,0]=float("NAN")
-                  if tr2>0:
-                      uvw[bins>.85*tr2,1]=float("NAN")
-                  if tr3>0:
-                      uvw[bins>.85*tr3,2]=float("NAN")
-                  if tr4>0:
-                      uvw[bins>.85*tr4,3]=float("NAN")
-              
+              LO=len(offsets)
+              if LO>6:
+                  Is=offsets[6]
+                  tmp1=struct.unpack("c",tdat[Is:Is+1])[0]
+                  Is=offsets[6]+1
+                  tmp2=struct.unpack("c",tdat[Is:Is+1])[0]
+                  if [tmp1+tmp2]==[b'\x00\x06']:
+                      Is=offsets[6]+16
+                      tr1=struct.unpack("H",tdat[Is:Is+2])[0]       
+                      Is=offsets[6]+18
+                      tr2=struct.unpack("H",tdat[Is:Is+2])[0]    
+                      Is=offsets[6]+20
+                      tr3=struct.unpack("H",tdat[Is:Is+2])[0]    
+                      Is=offsets[6]+22
+                      tr4=struct.unpack("H",tdat[Is:Is+2])[0]     
+                ## Convert bottom track range to meters
+                      tr1=tr1/100.0     
+                      tr2=tr2/100.0     
+                      tr3=tr3/100.0     
+                      tr4=tr4/100.0
+                ## Only set velocity data below detected bottom equal to 0 if the bottom track range is greater than 0
+                      if tr1>0:
+                          uvw[bins>.85*tr1,0]=float("NAN")
+                      if tr2>0:
+                          uvw[bins>.85*tr2,1]=float("NAN")
+                      if tr3>0:
+                          uvw[bins>.85*tr3,2]=float("NAN")
+                      if tr4>0:
+                          uvw[bins>.85*tr4,3]=float("NAN")
+                  
             ## Bin map velocity data based on pitch and roll
               uvw=mapdepthcells(uvw,tpitch,troll)
             ## This is where we actually build the arrays/vecotrs of the PD0 data. 
