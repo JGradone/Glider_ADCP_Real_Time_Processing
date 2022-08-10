@@ -9,6 +9,8 @@ import datetime
 import struct
 import pandas as pd
 import math
+import scipy
+from scipy.sparse.linalg import lsqr
 from scipy.spatial.transform import Rotation as R
 
 ## Setting time origin
@@ -54,14 +56,15 @@ plt.ion()
 def main(argv):
     files=glob.glob(idir+'*.pd0')
     files.sort(key=os.path.getmtime)
-    files=files[-3:] #Gets the last files. 
+    files=files[1]
     
-    for file in files:
-        read_PD0(file)
-        process_data(U=u1,V=u2,H=1000,dz=10,u_daverage=0,v_daverage=0)
-        write_data(file)  
-        plot_data()
-        plt.show()
+    #for file in files:
+    read_PD0(files)
+    #process_data(U=u1,V=u2,H=1000,dz=10,u_daverage=0,v_daverage=0)
+    inversion(U=u1.transpose(), V=u2.transpose(), dz=10, u_daverage=0, v_daverage=0, bins=bins, depth=depth, wDAC=5, wSmoothness=1)
+    write_data(files)  
+    plot_data()
+    plt.show()
 
 
 ## Read in binary PD0 file
@@ -633,41 +636,233 @@ def qaqc_data(uvw, tEI, tC, tPG):
     return(uvw)
 
                         
-def process_data(U,V,H,dz,u_daverage,v_daverage):
-    global O_ls, G_ls, bin_new    
+# def process_data(U,V,H,dz,u_daverage,v_daverage):
+#     global O_ls, G_ls, bin_new    
     
+#     ## Feb-2021 jgradone@marine.rutgers.edu Initial
+#     ## Jul-2021 jgradone@marine.rutgers.edu Updates for constraints
+    
+#     ## Purpose: Take velocity measurements from glider mounted ADCP and compute
+#     # shear profiles
+    
+#     ## Outputs:
+#     # O_ls is the ocean velocity profile
+#     # G_ls is the glider velocity profile
+#     # bin_new are the bin centers for the point in the profiles
+#     # C is the constant used in the constraint equation (Not applicable for
+#     # real-time processing)
+    
+#     ## Inputs:
+#     # dz is desired vertical resolution, should not be smaller than bin length
+#     # H is the max depth of the water column
+#     # U is measured east-west velocities from ADCP
+#     # V is measured north-south velocities from ADCP
+#     # Z is the measurement depths of U and V
+#     # uv_daverage is depth averaged velocity (Set to 0 for real-time)
+    
+#     ##########################################################################        
+#     # Take difference between bin lengths for bin size [m]
+#     bin_size = np.diff(bins)[0]
+#     bin_num = len(bins)
+
+#     # This creates a grid of the ACTUAL depths of the ADCP bins by adding the
+#     # depths of the ADCP bins to the actual depth of the instrument
+#     [bdepth,bbins]=np.meshgrid(depth,bins)
+#     bin_depth = bdepth+bbins  
+#     Z = bin_depth
+
+#     # Set knowns from Equations 19 from Visbeck (2002) page 800
+#     # Maximum number of observations (nd) is given by the number of velocity
+#     # estimates per ping (nbin) times the number of profiles per cast (nt)
+#     nbin = U.shape[0]  # number of programmed ADCP bins per individual profile
+#     nt   = U.shape[1]  # number of individual velocity profiles
+#     nd   = nbin*nt      # G dimension (1) 
+
+#     # Define the edges of the bins
+#     bin_edges = np.arange(0,math.floor(np.max(bin_depth)),dz).tolist()
+
+#     # Check that each bin has data in it
+#     bin_count = np.empty(len(bin_edges)-1) # Preallocate memory
+#     bin_count[:] = np.NaN
+
+#     for k in np.arange(len(bin_edges))[:-1]:
+#         # Create index of depth values that fall inside the bin edges
+#         ii = np.where((bin_depth > bin_edges[k]) & (bin_depth < bin_edges[k+1]))
+#         bin_count[k] = len(bin_depth[ii])
+#         ii = []
+
+#     # Create list of bin centers    
+#     bin_new = [x+dz/2 for x in bin_edges[:-1]]
+
+#     # Chop off the top of profile if no data
+#     ind = np.argmax(bin_count > 0) # Stops at first index greater than 0
+#     bin_new = bin_new[ind:]        # Removes all bins above first with data
+#     z1 = bin_new[0]                # Depth of center of first bin with data
+
+#     # Create and populate G
+#     nz = len(bin_new)  # number of ocean velocities desired in output profile
+#     nm = nz + nt       # G dimension (2), number of unknowns
+#     # Let's build the corresponding coefficient matrix G 
+#     G = np.zeros((nd,nm))
+
+#     # Indexing of the G matrix was taken from Todd et al. 2012
+#     for ii in np.arange(nt):           # Number of ADCP profiles per cast
+#         for jj in np.arange(nbin):     # Number of measured bins per profile
+
+#             # Uctd part of matrix
+#             G[(nbin*(ii-1))+jj,ii] = 1
+
+#             # This will fill in the Uocean part of the matrix. It loops through
+#             # all Z members and places them in the proper location in the G matrix
+
+#             # Find the difference between all bin centers and the current Z value        
+#             dx = abs(bin_new-Z[ii,jj])
+
+#             # Find the minimum of these differences
+#             minx = np.nanmin(dx)
+
+#             # Finds bin_new index of the first match of Z and bin_new    
+#             idx = np.argmin(dx-minx)
+
+#             G[(nbin*(ii-1))+jj,nt+idx] = 1
+#             del dx, minx, idx
+
+
+#     # Reshape U and V into the format of the d column vector
+#     d_u = np.flip(U.transpose(),axis=0)
+#     d_u = d_u.flatten()
+#     d_v = np.flip(V.transpose(),axis=0)
+#     d_v = d_v.flatten()
+
+
+#     ##########################################################################
+#     ## This chunk of code containts the constraints for depth averaged currents
+#     ## which we likely won't be using for the real-time processing
+
+#     # Need to calculate C (Todd et al. 2017) based on our inputs 
+#     # This creates a row that has the same # of columns as G. The elements
+#     # of the row follow the trapezoid rule which is used because of the
+#     # extension of the first bin with data to the surface. The last entry of
+#     # the row corresponds to the max depth reached by the glider, any bins
+#     # below that should have already been removed.
+
+#     constraint = np.concatenate(([np.zeros(nt)], [z1/2], [z1/2+dz/2], [[dz]*(nz-3)], [dz/2]), axis=None)
+
+#     # To find C, we use the equation of the norm and set norm=1 because we
+#     # desire unity. The equation requires we take the sum of the squares of the
+#     # entries in constraint.
+
+#     sqr_constraint = constraint*constraint
+#     sum_sqr_constraint = np.sum(sqr_constraint)
+
+#     # Then we can solve for the value of C needed to maintain unity 
+
+#     C = H*(1/np.sqrt(sum_sqr_constraint))
+
+#     # This is where you would add the constraint for the depth averaged
+#     # velocity from Todd et al., (2011/2017)
+
+#     # OG
+#     du = np.concatenate(([d_u],[C*u_daverage]), axis=None)
+#     dv = np.concatenate(([d_v],[C*v_daverage]), axis=None)
+
+#     # Build Gstar
+#     # Keep this out because not using depth averaged currents
+#     Gstar = np.vstack((G, (C/H)*constraint))
+
+#     ##########################################################################
+
+#     # Build the d matrix
+#     d = list(map(complex,du, dv))
+
+#     ##### Inversion!
+#     ## If want to do with a sparse matrix sol'n, look at scipy
+#     #Gs = scipy.sparse(Gstar)
+#     Gs = Gstar
+
+#     ms = np.linalg.solve(np.dot(Gs.conj().transpose(),Gs),Gs.conj().transpose())
+
+#     ## This is a little clunky but I think the dot product fails because of
+#     ## NaN's in the d vector. So, this code will replace NaN's with 0's just
+#     ## for that calculation    
+#     sol = np.dot(ms,np.where(np.isnan(d),0,d))
+
+#     O_ls = sol[nt:]   # Ocean velocity
+#     G_ls = sol[0:nt]  # Glider velocity
+
+
+
+
+
+##################################################################################################
+
+def inversion(U,V,dz,u_daverage,v_daverage,bins,depth, wDAC, wSmoothness):
+    global O_ls, G_ls, bin_new
+
     ## Feb-2021 jgradone@marine.rutgers.edu Initial
     ## Jul-2021 jgradone@marine.rutgers.edu Updates for constraints
-    
+    ## Jun-2022 jgradone@marine.rutgers.edu Corrected dimensions and indexing of G matrix
+    ## Jun-2022 jgradone@marine.rutgers.edu Added curvature minimizing constraint and constraint weights
+
     ## Purpose: Take velocity measurements from glider mounted ADCP and compute
     # shear profiles
-    
+
     ## Outputs:
     # O_ls is the ocean velocity profile
     # G_ls is the glider velocity profile
     # bin_new are the bin centers for the point in the profiles
-    # C is the constant used in the constraint equation (Not applicable for
-    # real-time processing)
-    
+    # obs_per_bin is the number of good velocity observations per final profile bin
+
     ## Inputs:
-    # dz is desired vertical resolution, should not be smaller than bin length
-    # H is the max depth of the water column
+    # dz is desired vertical resolution, should not be smaller than bin length 
     # U is measured east-west velocities from ADCP
     # V is measured north-south velocities from ADCP
-    # Z is the measurement depths of U and V
+    # bins is the bin depths for the U and V measurements
     # uv_daverage is depth averaged velocity (Set to 0 for real-time)
-    
+    # depth is the depth of the glider measured by the ADCP
+    # wDAC is the weight of the DAC constraint (5 per Todd et al. 2017)
+    # wSmoothness is the weight of the curvature minimizing contraint (1 per Todd et al. 2017)
+
+
+    #########################################################################  
+    ## These steps filter for NAN rows and columns so they are technically QAQC
+    ## but I think the best place to put them is inthe inversion function because
+    ## if there are NaNs still present in the data here, it will throw everything off
+    ## These steps are HUGE for efficiency because it reduces the size of the G
+    ## matrix as much as possible.
+
+    ## This determines the rows (bins) where all the columns are NaN
+    nanind = np.where( (np.sum(np.isnan(U),axis=1)/U.shape[1]) == 1)[0]
+    if len(nanind) > 0:
+        U = np.delete(U,nanind,axis=0)
+        V = np.delete(V,nanind,axis=0)
+        bins = np.delete(bins,nanind)
+
+    ## Do the same thing with individual ensembles. Note: need to remove the corresponding
+    ## ensemble pressure reading to ensure correction dimensions and values.
+    nanind = np.where((np.sum(np.isnan(U),axis=0)/U.shape[0]) == 1)[0]
+    if len(nanind) > 0:
+        U = np.delete(U,nanind,axis=1)
+        V = np.delete(V,nanind,axis=1)
+        depth = np.delete(depth,nanind)
+    ##########################################################################        
+
+
     ##########################################################################        
     # Take difference between bin lengths for bin size [m]
     bin_size = np.diff(bins)[0]
     bin_num = len(bins)
-
     # This creates a grid of the ACTUAL depths of the ADCP bins by adding the
     # depths of the ADCP bins to the actual depth of the instrument
     [bdepth,bbins]=np.meshgrid(depth,bins)
     bin_depth = bdepth+bbins  
     Z = bin_depth
+    # Calculate the maximum depth of glider which is different than maximum ADCP bin depth
+    ZmM = np.nanmax(depth)
+    ##########################################################################        
 
+
+    ##########################################################################        
     # Set knowns from Equations 19 from Visbeck (2002) page 800
     # Maximum number of observations (nd) is given by the number of velocity
     # estimates per ping (nbin) times the number of profiles per cast (nt)
@@ -691,101 +886,139 @@ def process_data(U,V,H,dz,u_daverage,v_daverage):
     # Create list of bin centers    
     bin_new = [x+dz/2 for x in bin_edges[:-1]]
 
+    # Calculate which FINAL solution bin is deeper than the maximum depth of the glider
+    # This is done so that the depth averaged velocity constraint is only applied to bins shallower than this depth
+    depth_ind = len(np.where(bin_new>ZmM)[0])
     # Chop off the top of profile if no data
     ind = np.argmax(bin_count > 0) # Stops at first index greater than 0
     bin_new = bin_new[ind:]        # Removes all bins above first with data
     z1 = bin_new[0]                # Depth of center of first bin with data
+    ##########################################################################        
 
+
+    ##########################################################################        
     # Create and populate G
     nz = len(bin_new)  # number of ocean velocities desired in output profile
-    nm = nz + nt       # G dimension (2), number of unknowns
+    nm = nt + nz       # G dimension (2), number of unknowns
     # Let's build the corresponding coefficient matrix G 
-    G = np.zeros((nd,nm))
+    G = scipy.sparse.lil_matrix((nd, nm), dtype=float)
 
     # Indexing of the G matrix was taken from Todd et al. 2012
-    for ii in np.arange(nt):           # Number of ADCP profiles per cast
-        for jj in np.arange(nbin):     # Number of measured bins per profile
+    for ii in np.arange(0,nt):           # Number of ADCP ensembles per segment
+        for jj in np.arange(0,nbin):     # Number of measured bins per ensemble 
 
             # Uctd part of matrix
-            G[(nbin*(ii-1))+jj,ii] = 1
-
+            G[(nbin*(ii))+jj,ii] = -1
             # This will fill in the Uocean part of the matrix. It loops through
             # all Z members and places them in the proper location in the G matrix
-
             # Find the difference between all bin centers and the current Z value        
-            dx = abs(bin_new-Z[ii,jj])
-
+            dx = abs(bin_new-Z[jj,ii])
             # Find the minimum of these differences
             minx = np.nanmin(dx)
-
             # Finds bin_new index of the first match of Z and bin_new    
             idx = np.argmin(dx-minx)
 
-            G[(nbin*(ii-1))+jj,nt+idx] = 1
+            # Uocean part of matrix
+            G[(nbin*(ii))+jj,(nt)+idx] = 1
+
             del dx, minx, idx
 
-
-    # Reshape U and V into the format of the d column vector
-    d_u = np.flip(U.transpose(),axis=0)
-    d_u = d_u.flatten()
-    d_v = np.flip(V.transpose(),axis=0)
-    d_v = d_v.flatten()
-
+    ##########################################################################        
+    # Reshape U and V into the format of the d column vector (order='F')
+    # Based on how G is made, d needs to be ensembles stacked on one another vertically
+    d_u = U.flatten(order='F')
+    d_v = V.flatten(order='F')
 
     ##########################################################################
     ## This chunk of code containts the constraints for depth averaged currents
-    ## which we likely won't be using for the real-time processing
+    # Make sure the constraint is only applied to the final ocean velocity bins that the glider dives through
+    # Don't apply it to the first bin and don't apply it to the bins below the gliders dive depth
+    constraint = np.concatenate(([np.zeros(nt)], [0], [np.tile(dz,nz-(1+depth_ind))], [np.zeros(depth_ind)]), axis=None)
 
-    # Need to calculate C (Todd et al. 2017) based on our inputs 
-    # This creates a row that has the same # of columns as G. The elements
-    # of the row follow the trapezoid rule which is used because of the
-    # extension of the first bin with data to the surface. The last entry of
-    # the row corresponds to the max depth reached by the glider, any bins
-    # below that should have already been removed.
+    # Ensure the L^2 norm of the constraint equation is unity
+    constraint_norm = np.linalg.norm(constraint/ZmM)
+    C = 1/constraint_norm
+    constraint_normalized = (C/ZmM)*constraint ## This is now equal to 1 (unity)
+    # Build Gstar and add weight from todd 2017
+    ## Some smarts would be to calculate signal to noise ratio first
+    Gstar = scipy.sparse.vstack((G,wDAC*constraint_normalized), dtype=float)
 
-    constraint = np.concatenate(([np.zeros(nt)], [z1/2], [z1/2+dz/2], [[dz]*(nz-3)], [dz/2]), axis=None)
 
-    # To find C, we use the equation of the norm and set norm=1 because we
-    # desire unity. The equation requires we take the sum of the squares of the
-    # entries in constraint.
+    # Add the constraint for the depth averaged velocity from Todd et al. (2017)
+    du = np.concatenate(([d_u],[wDAC*C*u_daverage]), axis=None)
+    dv = np.concatenate(([d_v],[wDAC*C*v_daverage]), axis=None)
+    d = np.array(list(map(complex,du, dv)))
 
-    sqr_constraint = constraint*constraint
-    sum_sqr_constraint = np.sum(sqr_constraint)
 
-    # Then we can solve for the value of C needed to maintain unity 
+    ##########################################################################        
+    #### THIS removes all NaN elements of d AND Gstar so the inversion doesn't blow up with NaNs
+    ind2 = np.where(np.isnan(d)==True)[0]
+    d = np.delete(d,ind2)
 
-    C = H*(1/np.sqrt(sum_sqr_constraint))
+    def delete_rows_csr(mat, indices):
+        """
+        Remove the rows denoted by ``indices`` form the CSR sparse matrix ``mat``.
+        """
+        if not isinstance(mat, scipy.sparse.csr_matrix):
+            raise ValueError("works only for CSR format -- use .tocsr() first")
+        indices = list(indices)
+        mask = np.ones(mat.shape[0], dtype=bool)
+        mask[indices] = False
+        return mat[mask]
 
-    # This is where you would add the constraint for the depth averaged
-    # velocity from Todd et al., (2011/2017)
+    Gstar = delete_rows_csr(Gstar.tocsr().copy(),ind2)
 
-    # OG
-    du = np.concatenate(([d_u],[C*u_daverage]), axis=None)
-    dv = np.concatenate(([d_v],[C*v_daverage]), axis=None)
+    #########################################################################        
+    # Test adding depth for tracking bin location
+    # d is ensembles stacked on one another vertically so same for Z (order='F')
+    Z_filt = Z.flatten(order='F')
+    Z_filt = np.delete(Z_filt,ind2)
+    Z_filt = np.concatenate(([Z_filt],[0]), axis=None)
 
-    # Build Gstar
-    # Keep this out because not using depth averaged currents
-    Gstar = np.vstack((G, (C/H)*constraint))
+    ##########################################################################        
+    ## Calculation the number of observations per bin
+    obs_per_bin = np.empty(len(bin_new))
+    obs_per_bin[:] = np.NaN
 
-    ##########################################################################
+    for x in np.arange(0,nz):
+        rows_where_nt_not_equal_zero = np.where(Gstar.tocsr()[0:Z_filt.shape[0],nt+x].toarray() > 0 )[0]
+        obs_per_bin[x] = len(rows_where_nt_not_equal_zero)
 
-    # Build the d matrix
-    d = list(map(complex,du, dv))
+    ## If there is no data in the last bin, drop that from the G matrix, bin_new, and obs_per_bin
+    if obs_per_bin[-1] == 0:
+        Gstar.tocsr()[:,:-1]
+        bin_new = bin_new[:-1]
+        obs_per_bin = obs_per_bin[:-1]
+        ## Update nz and nt
+        nz = len(bin_new)
+        nt = Gstar.shape[1]-nz
 
-    ##### Inversion!
-    ## If want to do with a sparse matrix sol'n, look at scipy
-    #Gs = scipy.sparse(Gstar)
-    Gs = Gstar
+    ##########################################################################        
+    ## Smoothness constraint
+    ## Only do this is the smoothness constraint is set
+    if wSmoothness > 0:
+        ## Add a vector of zerosm the length of nz, twice to the bottom of the data column vector
+        d = np.concatenate(([d],[np.zeros(nz)],[np.zeros(nz)]), axis=None)
+        ## Constraint on smoothing Uocean side of matrix
+        smoothing_matrix_Uocean = scipy.sparse.diags([[-1],[2],[-1]], [0,1,2], shape=(nz,nz))
+        smoothing_matrix1 = scipy.sparse.hstack((np.zeros((nz,nt)),smoothing_matrix_Uocean), dtype=float)
+        ## Constraint on smoothing Uglider side of matrix
+        smoothing_matrix_Uglider = scipy.sparse.diags([[-1],[2],[-1]], [0,1,2], shape=(nz,nt))
+        smoothing_matrix2 = scipy.sparse.hstack((smoothing_matrix_Uglider,np.zeros((nz,nz))), dtype=float)
+        Gstar = scipy.sparse.vstack((Gstar,wSmoothness*smoothing_matrix1,wSmoothness*smoothing_matrix2), dtype=float)
 
-    ms = np.linalg.solve(np.dot(Gs.conj().transpose(),Gs),Gs.conj().transpose())
 
-    ## This is a little clunky but I think the dot product fails because of
-    ## NaN's in the d vector. So, this code will replace NaN's with 0's just
-    ## for that calculation    
-    sol = np.dot(ms,np.where(np.isnan(d),0,d))
+    ##########################################################################        
+    ## Run the Least-Squares Inversion!
+    x = lsqr(Gstar, d)[0]
 
-    O_ls = sol[nt:]   # Ocean velocity
-    G_ls = sol[0:nt]  # Glider velocity
+    O_ls = x[nt:]
+    G_ls = x[0:nt] 
+    ########################################################################## 
+
+    return(O_ls, G_ls, bin_new, obs_per_bin)
+
+
 
 
 
