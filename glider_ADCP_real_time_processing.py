@@ -18,12 +18,10 @@ rtime=datetime.datetime(2020,1,1,0,0,0)
 
 ## Set path to data
 odir='./'
-#idir = 'C:\\work\\glideradcp\\data\\ru33_2020_11_20_dvl\\pd0\\'
-#idir ='/home/hunter/Projects/glider/glideradcp/ru33_2020_11_20_dvl/pd0/'
-idir='/Users/joegradone/Desktop/'
-#idir = 'C:\\work\\glideradcp\\stthomas\\'
+idir='./'
 
-## Initializes empty variables, but for more that just the PD0 output
+
+
 time=[]    
 depth=[] 
 pitch=[]
@@ -56,7 +54,7 @@ plt.ion()
 def main(argv):
     files=glob.glob(idir+'*.pd0')
     files.sort(key=os.path.getmtime)
-    files=files[1]
+    files=files[0]
     
     #for file in files:
     read_PD0(files)
@@ -86,27 +84,28 @@ def read_PD0(infile):
     ## It searches for the header ID and source ID (both '0x7f')
     ## See Chapter 8 of  PathFinder DVL Guide_Apr20.pdf 
     for [ind,tmp1] in enumerate(dat):
-          if hex(dat[ind])=='0x7f' and hex(dat[ind+1]) =='0x7f':                 
+          if  (hex(dat[ind])=='0x7f') and (hex(dat[ind+1]) =='0x7f'):                 
                   break
     
     ## This extracts the number of bytes per ensemble. 
     nbytes=struct.unpack("h",dat[ind+2:ind+4])[0]+2
 #    print('Finding Ensembles')      
 
-
     ## Find the starting byte of every ensemble. (Varaible Iens)
     ## It goes through every byte and searchs for header ID's and source ID's
     ## When one is found, the index is added to the variable Iens 
     Iens=[] ## Starting byte of each ensemble. 
-    nind=0
     n=0
+
     for [ind,tmp1] in enumerate(dat):
-          if hex(dat[ind])=='0x7f' and hex(dat[ind+1]) =='0x7f':
+
+          if ind == len(dat)-1: break
+
+          if (hex(dat[ind])=='0x7f') and (hex(dat[ind+1]) =='0x7f'):
               n=n+1
               nbytes2=struct.unpack("h",dat[ind+2:ind+4])[0]+2  
-             
               startens=ind
-              tdat=dat[startens:startens+nbytes]
+              tdat=dat[startens:startens+nbytes]  
               if len(tdat)<nbytes:
                    print('breaking')
                    break
@@ -116,7 +115,7 @@ def read_PD0(infile):
                       
                    if nbytes == nbytes2:
   
-                       nind=ind
+
                        Iens.append(ind)
  #             else:
  #                print('Bad Checksum')
