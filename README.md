@@ -13,6 +13,6 @@ Acknowledgments
 ----------------------
 Please cite this package using this [DOI]. The intention for publishing this code on GitHub is twofold: 1) to make glider based acoustic current profiler data easier to work with and 2) to improve upon the processing workflow and make it more transparent. For these reasons, I encourage comments, questions, concerns, and for users of this code to report any potential bugs. Please do not hesitate to reach out to me at jgradone@marine.rutgers.edu.
 
-This project was funded by the Office of Naval Research (ONR-N00014-20-1-2568-828332). The PI of this project is Dr. Travis Miles. Joe Gradone, Eli Hunter, and Julia Engdahl contributed to the code development.
+This project was funded by the Office of Naval Research (N00014-20-1-2568). The PI of this project is Dr. Travis Miles. Joe Gradone, Eli Hunter, and Julia Engdahl contributed to the code development.
 
 Citations for the methods used in this package are included in the code where relevant.
