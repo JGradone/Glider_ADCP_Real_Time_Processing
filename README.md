@@ -1,4 +1,4 @@
-#Glider_ADCP_Real_Time_Processing
+# Glider_ADCP_Real_Time_Processing
 
 Glider_ADCP_Real_Time_Processing is a package designed for processing Teledyne RDI Pathfinder data collected in real-time. The initial development of this code was for Teledyne Webb Research Slocum gliders, however it is intended to be platform and (eventually) sensor agnostic. The Python script developed here runs on a RaspberryPi and does the following:
 
