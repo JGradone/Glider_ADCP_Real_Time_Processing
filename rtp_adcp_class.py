@@ -1,8 +1,8 @@
 import os,sys
 import glob
 import numpy as np
-import matplotlib,netCDF4
-import matplotlib.pyplot as plt
+#import matplotlib,netCDF4
+#import matplotlib.pyplot as plt
 import datetime
 import struct
 import pandas as pd
@@ -11,6 +11,10 @@ import scipy
 from scipy.sparse.linalg import lsqr
 from scipy.spatial.transform import Rotation as R
 import time as timeit
+import lzma
+# import serial
+import base64
+import netCDF4
 # ## Setting time origin
 rtime=datetime.datetime(2020,1,1,0,0,0)
 
@@ -842,6 +846,7 @@ class Write_NC:
     def write_data(self):    
         basefile=os.path.basename(self.file).upper()
         ncfile=self.odir+basefile.replace('PD0','nc')
+        ncfilename = ncfile
         print('Writing profile DATA : '+ncfile)
         ncfile = netCDF4.Dataset(ncfile, 'w', format='NETCDF4')
         ncfile.Conventions= "CF-1.6"
@@ -893,7 +898,7 @@ class Write_NC:
         ncfile.variables['v'].standard_name='northward_sea_water_velocity'
         
         ncfile.close()
-        
+        return ncfilename
         
         
         
@@ -1037,6 +1042,7 @@ class Plot_ADCP:
         plt.legend()
         
         
+        
 def misc_checks(check_depth, check_u):
     depth_shape=check_depth.shape[0]
     depth_zeros = len(np.where(check_depth ==0)[0])
@@ -1050,7 +1056,16 @@ def misc_checks(check_depth, check_u):
     elif U_nans == U_size:
         err_msg='Missing all data. Cannot create inversion!'
         err_flag = 2
+    elif point_diff <2:
+        err_msg='Too little data to create inversion.'
+        err_flag = 3
     elif point_diff >=2:
         err_msg=str(nan_percent) +'% data is nan. Calculating inversion.'
-        err_flag = 3
+        err_flag = 4
     return err_msg, err_flag
+
+
+
+
+
+
